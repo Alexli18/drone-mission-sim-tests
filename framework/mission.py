@@ -1,7 +1,6 @@
 """Load scenario YAML files (merged over the parameter baseline) and build missions.
 
-Types: ``hover`` (M2) and ``mission`` (M3); ``failsafe`` (M4) is added with the
-test that flies it.
+Types: ``hover`` (M2), ``mission`` (M3) and ``failsafe`` (M4).
 """
 
 from __future__ import annotations
@@ -41,6 +40,32 @@ class Bounds:
 
 
 @dataclass(frozen=True)
+class Trigger:
+    type: str  # at_waypoint | after_s
+    value: float
+
+
+@dataclass(frozen=True)
+class Failure:
+    kind: str
+    trigger: Trigger | None = None
+    breach_north_m_s: float | None = None  # geofence_breach only
+
+
+@dataclass(frozen=True)
+class Expected:
+    """Semantics: the design's "Pass rule for failsafe scenarios"."""
+
+    mode_reached: str | None
+    leave_mode: str | None
+    allowed_before: tuple[str, ...]
+    then_mode: str | None
+    landed: bool
+    disarmed: bool
+    max_dist_from_home_m: float | None
+
+
+@dataclass(frozen=True)
 class Scenario:
     name: str
     type: str
@@ -51,6 +76,9 @@ class Scenario:
     speed_m_s: float | None = None
     area: Area | None = None
     duration_bounds_s: Bounds | None = None
+    failure: Failure | None = None
+    expected: Expected | None = None
+    geofence: tuple[tuple[float, float], ...] | None = None  # (north_m, east_m) from home
 
 
 # Keys each scenario type requires and allows, besides name/type/description.
@@ -58,7 +86,11 @@ _SCHEMA = {
     "hover": {"required": {"altitude_m", "hover_s"}, "optional": {"px4_params"}},
     "mission": {"required": {"altitude_m", "speed_m_s", "area", "duration_bounds_s"},
                 "optional": {"px4_params"}},
+    "failsafe": {"required": {"altitude_m", "failure", "expected"},
+                 "optional": {"px4_params", "speed_m_s", "area", "geofence"}},
 }
+_EXPECTED_KEYS = {"mode_reached", "leave_mode", "allowed_before", "then_mode", "landed",
+                  "disarmed", "max_dist_from_home_m"}
 _COMMON = {"name", "type", "description"}
 
 
@@ -104,6 +136,10 @@ def load_scenario(path: Path) -> Scenario:
     def number(key):
         return float(data[key]) if key in data else None
 
+    failure = expected = geofence = None
+    if data["type"] == "failsafe":
+        failure, expected, geofence = _failsafe_parts(data, params, fail)
+
     return Scenario(
         name=data["name"],
         type=data["type"],
@@ -114,7 +150,88 @@ def load_scenario(path: Path) -> Scenario:
         speed_m_s=number("speed_m_s"),
         area=build(Area, "area"),
         duration_bounds_s=build(Bounds, "duration_bounds_s"),
+        failure=failure,
+        expected=expected,
+        geofence=geofence,
     )
+
+
+def _failsafe_parts(data, params, fail):
+    from framework.failures import FAULTS  # imported here: failures.py imports this module
+
+    raw = data["failure"]
+    if not isinstance(raw, dict) or "kind" not in raw:
+        fail("failure must be a mapping with a kind")
+    kind = raw["kind"]
+    if kind not in FAULTS:
+        fail(f"unknown failure.kind: {kind} (known: {', '.join(sorted(FAULTS))})")
+    allowed = {"kind", "trigger"} | ({"breach_north_m_s"} if kind == "geofence_breach" else set())
+    for key in sorted(raw):
+        if key not in allowed:
+            fail(f"unknown key: failure.{key}")
+    trigger = None
+    if "trigger" in raw:
+        t = raw["trigger"]
+        if not isinstance(t, dict) or set(t) != {"type", "value"} or t["type"] not in (
+                "at_waypoint", "after_s"):
+            fail("failure.trigger must be {type: at_waypoint|after_s, value: N}")
+        trigger = Trigger(t["type"], float(t["value"]))
+
+    geofence = None
+    if kind == "geofence_breach":
+        if "breach_north_m_s" not in raw or "geofence" not in data:
+            fail("geofence_breach needs failure.breach_north_m_s and a geofence block")
+        polygon = data["geofence"].get("inclusion_polygon") if isinstance(
+            data["geofence"], dict) else None
+        if not polygon or len(polygon) < 3:
+            fail("geofence.inclusion_polygon needs at least 3 points")
+        geofence = tuple((float(n), float(e)) for n, e in polygon)
+        if not _contains(geofence, (0.0, 0.0)):
+            fail("geofence.inclusion_polygon must contain home (0, 0)")
+    else:
+        if "geofence" in data:
+            fail("geofence is only allowed for failure.kind geofence_breach")
+        for key in ("area", "speed_m_s"):
+            if key not in data:
+                fail(f"missing field: {key}")
+
+    raw_expected = data["expected"]
+    if not isinstance(raw_expected, dict):
+        fail("expected must be a mapping")
+    for key in sorted(raw_expected):
+        if key not in _EXPECTED_KEYS:
+            fail(f"unknown key: expected.{key}")
+    if ("mode_reached" in raw_expected) == ("leave_mode" in raw_expected):
+        fail("expected needs exactly one of mode_reached and leave_mode")
+    allowed_before = tuple(raw_expected.get("allowed_before", ()))
+    then_mode = raw_expected.get("then_mode")
+    if "leave_mode" in raw_expected and (allowed_before or then_mode):
+        fail("allowed_before and then_mode must be empty with leave_mode")
+    distance = raw_expected.get("max_dist_from_home_m")
+    expected = Expected(
+        mode_reached=raw_expected.get("mode_reached"),
+        leave_mode=raw_expected.get("leave_mode"),
+        allowed_before=allowed_before,
+        then_mode=then_mode,
+        landed=bool(raw_expected.get("landed", False)),
+        disarmed=bool(raw_expected.get("disarmed", False)),
+        max_dist_from_home_m=None if distance is None else float(distance),
+    )
+
+    missing = sorted(FAULTS[kind].required_params - set(params))
+    if missing:
+        fail(f"px4_params (after the baseline merge) lacks {', '.join(missing)}")
+    return Failure(kind, trigger, raw.get("breach_north_m_s")), expected, geofence
+
+
+def _contains(polygon, point) -> bool:
+    """Ray casting point-in-polygon on (north, east) offsets."""
+    x, y = point
+    inside = False
+    for (x1, y1), (x2, y2) in zip(polygon, polygon[1:] + polygon[:1], strict=True):
+        if (y1 > y) != (y2 > y) and x < (x2 - x1) * (y - y1) / (y2 - y1) + x1:
+            inside = not inside
+    return inside
 
 
 def list_scenarios(scenario_type: str) -> list[Path]:

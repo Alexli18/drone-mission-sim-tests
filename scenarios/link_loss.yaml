@@ -1,0 +1,19 @@
+name: link_loss
+type: failsafe
+description: The data link to the ground station is lost at waypoint 3; the vehicle must return.
+altitude_m: 15
+speed_m_s: 5
+area: {origin_north_m: 10, origin_east_m: 10, width_m: 100, height_m: 100, line_spacing_m: 10}
+px4_params: {NAV_DLL_ACT: 2, COM_DL_LOSS_T: 10, COM_DLL_EXCEPT: 0}   # COM_FAIL_ACT_T from the baseline
+# Mechanism (spikes S5/S6): built-in mavlink_signal injection is unsupported, so
+# iptables drops test -> PX4 traffic. COM_DL_LOSS_T is scaled x10 by the
+# framework (S3): ~100 s + 5 s Hold; ~218 s of survey remain after waypoint 3.
+failure:
+  kind: link_loss
+  trigger: {type: at_waypoint, value: 3}
+expected:
+  mode_reached: RETURN_TO_LAUNCH
+  allowed_before: [HOLD]
+  landed: true
+  disarmed: true
+  max_dist_from_home_m: 5

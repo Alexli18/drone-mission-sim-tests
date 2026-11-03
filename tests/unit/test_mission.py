@@ -109,3 +109,48 @@ def test_bad_area_keys_are_rejected(tmp_path):
     data["area"]["spacing"] = 5
     with pytest.raises(ScenarioError, match="area must have exactly the keys"):
         load_scenario(write(tmp_path, data))
+
+
+FAILSAFE = {
+    "name": "f", "type": "failsafe", "description": "d", "altitude_m": 15, "speed_m_s": 5,
+    "area": {"origin_north_m": 10, "origin_east_m": 10, "width_m": 100, "height_m": 100,
+             "line_spacing_m": 10},
+    "px4_params": {"SYS_FAILURE_EN": 1, "EKF2_NOAID_TOUT": 5000000, "COM_POS_FS_EPH": 5},
+    "failure": {"kind": "gps_loss", "trigger": {"type": "after_s", "value": 60}},
+    "expected": {"leave_mode": "MISSION", "landed": True, "disarmed": True},
+}
+
+
+def test_failsafe_scenarios_load_with_their_mechanism():
+    kinds = {load_scenario(p).failure.kind for p in list_scenarios("failsafe")}
+    assert kinds == {"gps_loss", "link_loss", "rc_loss", "low_battery", "geofence_breach"}
+
+
+def test_both_mode_reached_and_leave_mode_is_rejected(tmp_path):
+    data = dict(FAILSAFE, expected={"leave_mode": "MISSION", "mode_reached": "LAND"})
+    with pytest.raises(ScenarioError, match="exactly one of mode_reached and leave_mode"):
+        load_scenario(write(tmp_path, data))
+
+
+def test_unknown_failure_kind_is_rejected(tmp_path):
+    with pytest.raises(ScenarioError, match="unknown failure.kind: wind"):
+        load_scenario(write(tmp_path, dict(FAILSAFE, failure={"kind": "wind"})))
+
+
+def test_missing_required_param_is_named(tmp_path):
+    data = dict(FAILSAFE, px4_params={"SYS_FAILURE_EN": 1})
+    with pytest.raises(ScenarioError, match="lacks COM_POS_FS_EPH, EKF2_NOAID_TOUT"):
+        load_scenario(write(tmp_path, data))
+
+
+def test_geofence_must_contain_home(tmp_path):
+    data = yaml.safe_load((SCENARIOS_DIR / "geofence_breach.yaml").read_text())
+    data["geofence"]["inclusion_polygon"] = [[10, 10], [30, 10], [30, 30], [10, 30]]
+    with pytest.raises(ScenarioError, match="must contain home"):
+        load_scenario(write(tmp_path, data))
+
+
+def test_geofence_only_for_geofence_breach(tmp_path):
+    data = dict(FAILSAFE, geofence={"inclusion_polygon": [[-1, -1], [1, -1], [1, 1]]})
+    with pytest.raises(ScenarioError, match="only allowed for failure.kind geofence_breach"):
+        load_scenario(write(tmp_path, data))

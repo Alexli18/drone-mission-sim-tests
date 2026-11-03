@@ -11,6 +11,7 @@ import inspect
 import json
 import math
 import time
+from dataclasses import dataclass
 
 EARTH_RADIUS_M = 6_371_000.0
 
@@ -151,3 +152,87 @@ def assert_duration(start_sim_s, end_sim_s, bounds, recorder=None) -> float:
         raise FlightAssertionError(f"duration {bounds.min_s}–{bounds.max_s} s (simulated)",
                                    f"{duration:.1f} s", recorder)
     return duration
+
+
+@dataclass(frozen=True)
+class Moment:
+    sim_s: float
+    wall_s: float  # time.monotonic()
+
+
+@dataclass(frozen=True)
+class Reference:
+    """When the active phase started (mission start or offboard start) and the fault."""
+
+    start: Moment
+    trigger: Moment
+
+
+def failsafe_verdict(recorder, expected, reference, active_mode: str):
+    """One evaluation of the pass rule: None (keep waiting), True (pass), or raise.
+
+    Rules (design, "Pass rule for failsafe scenarios"):
+    1 the expected mode change happens before the mission finishes;
+    2 no failsafe mode between the active-phase start and the fault;
+    3 ``mode_reached``: the first non-active mode not in ``allowed_before`` is it,
+      and ``then_mode`` follows before disarm; 4 ``leave_mode``: any other mode;
+    5 landed and disarmed (rule 6, distance from home, is checked by the caller).
+    """
+    history = recorder.mode_history()
+    before = [m for _, wall, m in history if reference.start.wall_s <= wall < reference.trigger.wall_s]
+    if any(mode != active_mode for mode in before):
+        raise FlightAssertionError(f"only {active_mode} before the fault",
+                                   f"saw {before} (failsafe before fault)", recorder)
+    after = [m for _, wall, m in history if wall >= reference.trigger.wall_s and m != active_mode]
+
+    if expected.mode_reached is not None:
+        candidates = [m for m in after if m not in expected.allowed_before]
+        first = candidates[0] if candidates else None
+        if first is not None and first != expected.mode_reached:
+            raise FlightAssertionError(f"first failsafe mode {expected.mode_reached}",
+                                       f"{first} (modes after the fault: {after})", recorder)
+        reached = first == expected.mode_reached
+    else:
+        reached = bool(after)
+
+    progress = recorder.latest("mission_progress")
+    mission_finished = (active_mode == "MISSION" and progress is not None
+                        and progress.total > 0 and progress.current >= progress.total)
+    if not reached:
+        if mission_finished:
+            raise FlightAssertionError("the failsafe fires during the mission",
+                                       "mission finished first (failsafe never fired)", recorder)
+        return None
+
+    disarmed = recorder.latest("armed") is False
+    if expected.then_mode is not None:
+        index = after.index(expected.mode_reached)
+        if expected.then_mode not in after[index + 1:]:
+            if disarmed:
+                raise FlightAssertionError(
+                    f"{expected.then_mode} after {expected.mode_reached}",
+                    f"disarmed without it (modes after the fault: {after})", recorder)
+            return None
+
+    landed = recorder.latest("landed_state")
+    if expected.landed and (landed is None or landed.name != "ON_GROUND"):
+        return None
+    if expected.disarmed and not disarmed:
+        return None
+    return True
+
+
+async def assert_failsafe_outcome(recorder, expected, reference, cfg, home,
+                                  active_mode="MISSION") -> float | None:
+    """Wait for the pass rule to hold; returns the landing distance from home."""
+    elapsed = time.monotonic() - reference.trigger.wall_s
+    budget = cfg.timeouts_wall_s.failsafe - elapsed
+    await wait_until(lambda: failsafe_verdict(recorder, expected, reference, active_mode),
+                     budget, f"failsafe outcome: {expected}", recorder, cfg.poll_interval_s)
+    pos = recorder.latest("position")
+    distance = horizontal_distance_m(home.latitude_deg, home.longitude_deg,
+                                     pos.latitude_deg, pos.longitude_deg)
+    if expected.max_dist_from_home_m is not None and distance > expected.max_dist_from_home_m:
+        raise FlightAssertionError(f"landed within {expected.max_dist_from_home_m} m of home",
+                                   f"{distance:.1f} m", recorder)
+    return distance

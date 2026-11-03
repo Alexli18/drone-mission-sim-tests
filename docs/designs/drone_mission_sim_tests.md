@@ -302,6 +302,40 @@ and the pass rule mentioned here are defined in the Technical Plan.
     message (STATUSTEXT) for the README. PX4's own tests cover geofence-aware Return, but none
     checks the breach action itself.
 
+**Results ([CI run 41714506246](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41714506246)
+and [CI run 41715170080](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41715170080),
+2026-11-03; geofence follow-up run locally):**
+
+*   **S5:** both `SYSTEM_MAVLINK_SIGNAL` and `SYSTEM_RC_SIGNAL` injections
+    return `UNSUPPORTED`, and no failsafe fires. Neither is used.
+*   **S6 mechanism 1 works.** About 94 simulated seconds after the
+    `iptables` rule is added (the scaled `COM_DL_LOSS_T`), PX4 goes to Hold,
+    then Return 5 s later, lands and disarms. Telemetry to the test keeps
+    flowing. Mechanism 2 (companion computer) is not needed, so
+    `scripts/gcs_heartbeat.py` and `pymavlink` are not added.
+*   **S7 works.** Stopping the manual control stream gives "Failsafe
+    activated: entering Hold for 5 seconds", then Return, landing, disarm.
+*   **S8:** the GPS injection is accepted. About 5.6 s later MAVSDK reports
+    **`LAND`** (blind Descend shows as Land), then the vehicle lands and
+    disarms.
+*   **S9: none of the three mechanisms works with a mission.** Mechanisms 1
+    and 3: `start_mission` returns `DENIED` with "Geofence violation for
+    waypoint 3". Mechanism 2: the fence upload succeeds, but PX4 re-checks the
+    running mission, reports "Geofence violation for waypoint 3" and "No valid
+    mission available, loitering", and stays in Hold. A local follow-up
+    (`spikes/geofence_spike.py`) tried two ways to leave the fence without a
+    mission. A `goto_location` target outside the fence is also rejected.
+    **Offboard velocity setpoints work:** after takeoff the test switches to
+    Offboard and pushes north at 3 m/s; PX4 leaves Offboard for Hold at the
+    fence, then Return, lands near home and disarms. `geofence_breach` uses
+    this ("offboard flow", see "Fault mechanisms per scenario").
+*   **Also seen in every run:** after disarming, PX4 reports the mode it was
+    in before the failsafe again (`MISSION` or `OFFBOARD`). The pass rule
+    ignores it (see "Pass rule for failsafe scenarios").
+*   **Parameter names:** `GF_PREDICT` and `SIM_BAT_ENABLE` do not exist in
+    v1.18.0-rc1 (the after-boot read-back caught both). They are not set; the
+    SIH battery simulation is always on.
+
 ## Critical User Journeys
 
 ### CUJ 1: A reviewer checks that the project works
@@ -564,16 +598,16 @@ differ from hardware defaults (for example, `COM_LOW_BAT_ACT` is 3 in SITL
 and 0 on hardware), and they can change between PX4 versions, so they are not
 relied on.
 
-For `link_loss` and `rc_loss`, spike S5 picks one mechanism per signal. The
-result is written into this table, and only that mechanism is implemented.
+The mechanisms below are the ones the M4 spikes (S5–S9) picked; only these are
+implemented.
 
 | Scenario | Mechanism | Parameters set | Expected behavior |
 |---|---|---|---|
 | `gps_loss` | MAVSDK failure injection `SENSOR_GPS`, `OFF`, 60 simulated seconds after mission start. | `SYS_FAILURE_EN=1`, `EKF2_NOAID_TOUT=5000000`, `COM_POS_FS_EPH=5` | Leaves Mission; lands and disarms. Landing position not checked (descent is blind). |
-| `link_loss` | **If S5 passes:** failure injection `SYSTEM_MAVLINK_SIGNAL`, `OFF` at waypoint 3. **If S5 fails:** the S6 mechanism, first choice `iptables` dropping test → PX4 traffic at waypoint 3. | `NAV_DLL_ACT=2`, `COM_DL_LOSS_T=10`, `COM_DLL_EXCEPT=0`; `SYS_FAILURE_EN=1` if S5 passes | Return (Hold first is allowed); lands within the home tolerance; disarms. |
-| `rc_loss` | Manual control input (neutral sticks: x = y = r = 0, z = 0.5) is streamed at 50 Hz wall-clock from before arming (a 0.2 s gap in simulated time at ×10, below `COM_RC_LOSS_T` = 0.5 s even before any S3 scaling). **If S5 passes:** failure injection `SYSTEM_RC_SIGNAL`, `OFF` at waypoint 3. **If S5 fails:** the stream stops at waypoint 3. | `COM_RC_IN_MODE=1`, `NAV_RCL_ACT=2`, `COM_RCL_EXCEPT=0`, `COM_RC_LOSS_T=0.5`; `SYS_FAILURE_EN=1` if S5 passes | Return (Hold first is allowed); lands within the home tolerance; disarms. |
-| `low_battery` | SIH battery simulator drains fast (see Alternative H for why not failure injection). | `SIM_BAT_ENABLE=1`, `SIM_BAT_DRAIN≈150` (derived from mission length; implementation plan, files 29–33), `SIM_BAT_MIN_PCT=2`, `BAT_LOW_THR=0.30`, `BAT_CRIT_THR=0.20`, `BAT_EMERGEN_THR=0.05`, `COM_LOW_BAT_ACT=3` | Return at 20% (Hold first is allowed), then Land at 5% (asserted with `then_mode: LAND`); lands and disarms. Landing position not checked. |
-| `geofence_breach` | Inclusion polygon (the allowed area) that contains home but not the whole survey; mechanism confirmed by S9. The survey path leaves the fence. | `GF_ACTION=3`, `GF_PREDICT=0` (or `GF_MAX_HOR_DIST=30` instead of the polygon, per S9) | Return (Hold first is allowed); lands within the home tolerance; disarms. |
+| `link_loss` | S6 mechanism 1: at waypoint 3, `iptables` drops test → PX4 traffic (UDP to port 14580). Linux only; skipped on macOS. | `NAV_DLL_ACT=2`, `COM_DL_LOSS_T=10`, `COM_DLL_EXCEPT=0` | Return (Hold first is allowed); lands within the home tolerance; disarms. |
+| `rc_loss` | Manual control input (neutral sticks: x = y = r = 0, z = 0.5) is streamed at 50 Hz wall-clock from before arming (a 0.2 s gap in simulated time at ×10, below `COM_RC_LOSS_T` = 0.5 s even before any S3 scaling). S7: the stream stops at waypoint 3. | `COM_RC_IN_MODE=1`, `NAV_RCL_ACT=2`, `COM_RCL_EXCEPT=0`, `COM_RC_LOSS_T=0.5` | Return (Hold first is allowed); lands within the home tolerance; disarms. |
+| `low_battery` | SIH battery simulator drains fast (see Alternative H for why not failure injection). | `SIM_BAT_DRAIN=150` (derived from mission length; implementation plan, files 29–33), `SIM_BAT_MIN_PCT=2`, `BAT_LOW_THR=0.30`, `BAT_CRIT_THR=0.20`, `BAT_EMERGEN_THR=0.05`, `COM_LOW_BAT_ACT=3` | Return at 20% (Hold first is allowed), then Land at 5% (asserted with `then_mode: LAND`); lands and disarms. Landing position not checked. |
+| `geofence_breach` | Offboard flow (S9 follow-up): an inclusion polygon around home is uploaded before arming; after takeoff and Hold, the test switches to Offboard and streams a 3 m/s north velocity setpoint every 0.05 s wall-clock until PX4 leaves Offboard. No mission is flown, because PX4 rejects missions and goto targets outside the fence. | `GF_ACTION=3` | Return (Hold first is allowed); lands within the home tolerance; disarms. |
 
 PX4 compares the battery thresholds with its own estimated charge, which is
 filtered and may not fall exactly linearly. The first `low_battery` run in
@@ -602,15 +636,12 @@ Values without a unit are PX4 enums or flags.
 | `MIS_TKO_LAND_REQ=0` (baseline) | A mission needs no explicit takeoff or landing item; PX4 takes off implicitly. |
 | `EKF2_NOAID_TOUT=5000000` | Microseconds without position aiding before the estimator reports position lost (GPS loss). |
 | `COM_POS_FS_EPH=5` | Horizontal position error in metres above which PX4 treats position as lost. |
-| `GF_PREDICT=0` | Geofence acts on the current position, not a predicted one. |
 | `COM_RC_IN_MODE=1` | Manual control comes only over MAVLink. |
-| `SIM_BAT_ENABLE=1` | Turns on the simulated battery. |
 | `SIM_BAT_DRAIN` | Seconds of simulated time to drain from 100% to 0% while armed. |
 | `SIM_BAT_MIN_PCT` | Floor the simulated battery never drops below, in **percent**. The baseline sets 50, so no scenario except `low_battery` (which sets 2) can reach a low level. |
 | `BAT_LOW_THR`, `BAT_CRIT_THR`, `BAT_EMERGEN_THR` | Low / critical / emergency thresholds, as a **fraction** (0.20 = 20%). At the low level PX4 only warns; it acts at critical and emergency. |
 | `COM_LOW_BAT_ACT=3` | Return at the critical level, land at the emergency level. |
 | `GF_ACTION=3` | Action on geofence breach: 3 = Return. |
-| `GF_MAX_HOR_DIST` | Maximum horizontal distance from home in metres (0 = off); used only if S9 picks mechanism 3. |
 
 The baseline names and meanings are taken from the PX4 parameter reference
 (docs.px4.io), not from the research notes, and have not yet been checked
@@ -658,6 +689,16 @@ waypoint, never in Return. A test passes only if all of these rules hold:
 6.  **The vehicle lands near home (`max_dist_from_home_m: D`).** The
     horizontal distance from home at landing is at most D. `null` means the
     landing position is not checked.
+
+**Offboard flow (`geofence_breach`).** The active mode is `OFFBOARD` instead
+of `MISSION`, the mission start and the trigger are both the moment the test
+starts Offboard, and rule 1 does not apply (there is no mission to finish).
+Rules 3–6 are unchanged.
+
+**Modes after disarm.** After disarming, PX4 reports the active mode
+(`MISSION` or `OFFBOARD`) again (S6–S9). Rules 3 and 4 skip the active mode
+when they look at modes after the reference time, so this does not count as
+a failsafe mode.
 
 All rules must hold within `timeouts_wall_s.failsafe`, counted in wall-clock
 seconds from the reference time. A data link loss that leads to Land instead
@@ -922,10 +963,10 @@ truth.
 | S2: the runner cannot hold ×10 (effective factor below half the requested one) | Timing-sensitive tests become unreliable | Set `speed_factor` to 3. If ×3 cannot be held either, use ×1 and split `failsafes` into one matrix entry per scenario (about 5 minutes of flight per job, inside the budget; no loss-timeout scaling needed). Reducing PX4's own message streams is a last resort, with no build commitment, because it may need a raw MAVLink library. |
 | S3 fails: read-back is impossible or the values follow none of the three outcomes | The effective loss timeout is unknown | Treat it as outcome (a) (the framework scales), keep the 50 Hz manual control stream, and double the survey margin. The README lists it as a limitation. |
 | S4 fails (IMU timestamp is not simulated time) | Durations and `after_s` triggers have no clock | Use MAVLink `SYSTEM_TIME.time_boot_ms`. If that also fails, use wall-clock time × the effective speed factor measured by S2, with wider bounds, and list it as a limitation. |
-| S5 and S6 both fail (data link), after the `iptables` drop and the companion-computer recipe | No working data link loss mechanism | Drop `link_loss` from the suite and list it as a README limitation. |
-| S5 and S7 both fail (RC) | No working RC loss mechanism | Drop `rc_loss` and list it as a README limitation. |
-| S8: MAVSDK reports Descend as a value that is also a normal mission mode | The pass rule cannot tell Descend from Mission | `gps_loss` asserts on landed and disarmed only (rules 5–6) and on the estimator reporting position lost; the README states it. |
-| S9: none of the three geofence mechanisms produces a Return | Geofence scenario cannot run | Drop `geofence_breach` and list it as a README limitation. |
+| S5 and S6 both fail (data link) | No working data link loss mechanism | **Did not happen:** S5 failed, S6 mechanism 1 (`iptables`) works. Residual risk: Linux only, so `link_loss` is skipped on macOS. |
+| S5 and S7 both fail (RC) | No working RC loss mechanism | **Did not happen:** S7 works. |
+| S8: MAVSDK reports Descend as a value that is also a normal mission mode | The pass rule cannot tell Descend from Mission | **Did not happen:** Descend shows as `LAND`. |
+| S9: none of the three geofence mechanisms produces a Return | Geofence scenario cannot run | **Happened** for all three mission-based mechanisms. Mitigated by the offboard flow (S9 follow-up); the README states that the breach is driven by offboard setpoints, not by a mission. |
 | v1.18.0-rc1 is a release candidate | Behavior and parameter defaults can change before v1.18.0 | The README states the exact version and digest. Behavior-relevant parameters are set explicitly and read back after boot. Moving to stable means changing two config values (tag, digest) and a full CI run. |
 | The pinned image is deleted from Docker Hub | CI cannot start PX4 once the cache entry is gone (GitHub evicts entries unused for 7 days) | The digest is recorded. Switch to the next published tag, or build from source (Alternative B). |
 | `mavsdk-grpc` gets less maintenance | Future PX4 versions may not be supported | Accepted risk (Alternative C); Future Improvements lists the switch. |
@@ -1463,13 +1504,10 @@ into file 23); the other numbers are kept so cross-references stay stable.
         | Fault (outcome) | `required_params` |
         |---|---|
         | `gps_loss` | `SYS_FAILURE_EN`, `EKF2_NOAID_TOUT`, `COM_POS_FS_EPH` |
-        | `link_loss` (S5 passes) | `SYS_FAILURE_EN`, `NAV_DLL_ACT`, `COM_DLL_EXCEPT`, `COM_FAIL_ACT_T`, `COM_DL_LOSS_T`¹ |
-        | `link_loss` (S6 mechanism 1 or 2) | `NAV_DLL_ACT`, `COM_DLL_EXCEPT`, `COM_FAIL_ACT_T`, `COM_DL_LOSS_T`¹ |
-        | `rc_loss` (S5 passes) | `SYS_FAILURE_EN`, `COM_RC_IN_MODE`, `NAV_RCL_ACT`, `COM_RCL_EXCEPT`, `COM_FAIL_ACT_T`, `COM_RC_LOSS_T`¹ |
-        | `rc_loss` (S7) | as above without `SYS_FAILURE_EN` |
-        | `low_battery` | `SIM_BAT_ENABLE`, `SIM_BAT_DRAIN`, `SIM_BAT_MIN_PCT`, `BAT_LOW_THR`, `BAT_CRIT_THR`, `BAT_EMERGEN_THR`, `COM_LOW_BAT_ACT` |
-        | `geofence_breach` (S9 mechanism 1 or 2) | `GF_ACTION`, `GF_PREDICT` |
-        | `geofence_breach` (S9 mechanism 3) | `GF_ACTION`, `GF_MAX_HOR_DIST` |
+        | `link_loss` (S6 mechanism 1) | `NAV_DLL_ACT`, `COM_DLL_EXCEPT`, `COM_FAIL_ACT_T`, `COM_DL_LOSS_T`¹ |
+        | `rc_loss` (S7) | `COM_RC_IN_MODE`, `NAV_RCL_ACT`, `COM_RCL_EXCEPT`, `COM_FAIL_ACT_T`, `COM_RC_LOSS_T`¹ |
+        | `low_battery` | `SIM_BAT_DRAIN`, `SIM_BAT_MIN_PCT`, `BAT_LOW_THR`, `BAT_CRIT_THR`, `BAT_EMERGEN_THR`, `COM_LOW_BAT_ACT` |
+        | `geofence_breach` (offboard flow) | `GF_ACTION` |
 
         ¹ Omitted if S3 gives outcome (c) for that parameter.
     *   Behavior per fault:
@@ -1497,13 +1535,20 @@ into file 23); the other numbers are kept so cross-references stay stable.
             *   If S7 is used, trigger cancels the task.
         *   **`low_battery`:** no trigger (the drain starts at arming);
             `prepare` and `trigger` do nothing.
-        *   **`geofence_breach`:** only the S9 mechanism is implemented. For
-            S9 mechanisms 1 and 2, the polygon (local offsets) is converted to
-            lat/lon and uploaded with
-            `geofence.upload_geofence(GeofenceData(polygons=[Polygon(points,
-            Polygon.FenceType.INCLUSION)], circles=[]))` in `prepare`
-            (mechanism 1) or `after_start` (mechanism 2). For S9 mechanism 3
-            nothing is uploaded. No trigger.
+        *   **`geofence_breach` (offboard flow, as built):** the fault has
+            `flow = "offboard"`. `prepare` converts the polygon (local
+            offsets) to lat/lon and uploads
+            `GeofenceData([Polygon(points, FenceType.INCLUSION)], [])`
+            (`FenceType` is module-level in `mavsdk_grpc.geofence`). The test
+            then arms, takes off and waits for Hold instead of flying a
+            mission. `trigger` sends one `set_velocity_ned(VelocityNedYaw(north,
+            0, 0, 0))`, calls `offboard.start()`, and starts a task that
+            repeats the setpoint every 0.05 s wall-clock until the mode is no
+            longer `OFFBOARD`; `cleanup` cancels it.
+        *   **As built:** S5 failed, so the injection branches for
+            `link_loss` and `rc_loss` are not implemented, and neither is S6
+            mechanism 2 or the `after_start` hook. `link_loss.prepare` skips
+            the test on non-Linux hosts.
     *   `async run_trigger(trigger, drone, recorder, fault, ctx) -> Reference`:
         *   If the scenario has a trigger, it waits for `at_waypoint`
             (mission progress `current ≥ N`, where `current` is the item
@@ -1729,7 +1774,7 @@ into file 23); the other numbers are kept so cross-references stay stable.
         *   `expected.mode_reached: RETURN_TO_LAUNCH`, `allowed_before:
             [HOLD]`, `max_dist_from_home_m: 5`.
     *   **`low_battery`:**
-        *   `px4_params: {SIM_BAT_ENABLE: 1, SIM_BAT_DRAIN: <s>,
+        *   `px4_params: {SIM_BAT_DRAIN: <s>,
             SIM_BAT_MIN_PCT: 2, BAT_LOW_THR: 0.30, BAT_CRIT_THR: 0.20,
             BAT_EMERGEN_THR: 0.05, COM_LOW_BAT_ACT: 3}`.
         *   `SIM_BAT_DRAIN` is set so that the critical level (80% drained)
@@ -1741,16 +1786,14 @@ into file 23); the other numbers are kept so cross-references stay stable.
             [HOLD]`, `then_mode: LAND`, `max_dist_from_home_m: null` (the
             emergency-level Land may happen before home).
     *   **`geofence_breach`:**
-        *   `px4_params: {GF_ACTION: 3, GF_PREDICT: 0}` and `geofence:
+        *   `px4_params: {GF_ACTION: 3}` and `geofence:
             {inclusion_polygon: [[-20, -20], [30, -20], [30, 130], [-20,
             130]]}` (north, east in metres from home).
-        *   The polygon contains home and the southern part of every survey
-            line (the lines run north–south). Its north edge is 30 m north of
-            home, while the survey extends to 110 m north, so the mission
-            crosses it.
-        *   For S9 mechanism 3, the `geofence` block is removed, and
-            `px4_params` gets `GF_MAX_HOR_DIST: 30` instead of `GF_PREDICT`.
-        *   No trigger.
+        *   The polygon contains home; its north edge is 30 m north of home.
+            There is no survey (offboard flow): `failure.breach_north_m_s: 3`
+            sets the push speed, so the fence is crossed about 10 simulated
+            seconds after Offboard starts.
+        *   No trigger (the breach starts right after takeoff).
         *   `expected.mode_reached: RETURN_TO_LAUNCH`, `allowed_before:
             [HOLD]`, `max_dist_from_home_m: 5`.
 

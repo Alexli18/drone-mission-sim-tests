@@ -1,0 +1,19 @@
+name: geofence_breach
+type: failsafe
+description: The vehicle is pushed north out of the fence in offboard mode; PX4 must return.
+altitude_m: 15
+# Mechanism (spike S9 and the geofence follow-up): PX4 rejects any mission or
+# goto target outside the fence, so after takeoff the test flies north at 3 m/s
+# in offboard mode. The fence's north edge is 30 m from home.
+px4_params: {GF_ACTION: 3}   # GF_PREDICT does not exist in v1.18.0-rc1
+geofence:
+  inclusion_polygon: [[-20, -20], [30, -20], [30, 130], [-20, 130]]   # north, east (m) from home
+failure:
+  kind: geofence_breach
+  breach_north_m_s: 3
+expected:
+  mode_reached: RETURN_TO_LAUNCH
+  allowed_before: [HOLD]
+  landed: true
+  disarmed: true
+  max_dist_from_home_m: 5
