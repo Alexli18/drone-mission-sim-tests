@@ -1707,8 +1707,10 @@ into file 23); the other numbers are kept so cross-references stay stable.
             `upload-artifact` (`if: always()`) of `artifacts/`, named
             `results-<suite>-<run>`.
     *   **Job `report`** (M5; `needs: sim`, `if: always()`): checkout → setup
-        Python → `download-artifact` with `pattern: results-*` and
-        `path: artifacts` → `python scripts/summarize.py artifacts/ >>
+        Python → `download-artifact` with `pattern: junit-*` and
+        `path: artifacts` (as built: each `sim` entry also uploads
+        `artifacts/junit/` alone as `junit-<suite>-<run>`, so the report does
+        not download about 100 MB of telemetry and ULogs) → `python scripts/summarize.py artifacts/ >>
         "$GITHUB_STEP_SUMMARY"`. The job reports; it does not gate.
 
 #### 24. `scripts/summarize.py` (Create)
