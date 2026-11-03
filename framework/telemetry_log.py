@@ -7,7 +7,7 @@ import enum
 import json
 import time
 
-from framework.assertions import call
+from framework.assertions import call, wait_until
 from framework.sitl import ARTIFACTS
 
 
@@ -61,6 +61,9 @@ class TelemetryRecorder:
         }
         for name, factory in streams.items():
             self._tasks[name] = asyncio.create_task(self._read(name, factory), name=name)
+        # Tests read sim_time_s() from their first line, so wait for the clock.
+        await wait_until(lambda: self._clock_last is not None, self.cfg.timeouts_wall_s.health,
+                         "first IMU sample (simulated clock)", self, self.cfg.poll_interval_s)
 
     async def _read(self, name, factory) -> None:
         async for value in factory():
