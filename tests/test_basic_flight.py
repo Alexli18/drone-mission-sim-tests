@@ -30,6 +30,15 @@ async def test_hover_and_land(cfg, scenario, drone, recorder, record_property):
     takeoff_wall = time.monotonic()
     takeoff_sim = recorder.sim_time_s()
     await call(drone.action.takeoff(), cfg, "takeoff")
+
+    def takeoff_finished():
+        modes = [mode for _, wall, mode in recorder.mode_history() if wall >= takeoff_wall]
+        return "TAKEOFF" in modes and modes[-1] == "HOLD"
+
+    # The hover starts when PX4 ends the takeoff and holds, not when the climb first
+    # enters the tolerance band.
+    await wait_until(takeoff_finished, timeouts.takeoff, "takeoff finished (TAKEOFF then HOLD)",
+                     recorder, cfg.poll_interval_s)
     await wait_altitude(recorder, scenario.altitude_m, tol, timeouts.takeoff, cfg)
 
     hover_start = recorder.sim_time_s()

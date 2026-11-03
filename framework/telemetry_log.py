@@ -41,9 +41,10 @@ class TelemetryRecorder:
         # PX4 counts stream rates in simulated time (spike S2), so divide by the factor.
         factor = self.cfg.px4.speed_factor
         rates = self.cfg.telemetry_wall_hz
-        await call(t.set_rate_position(rates.position / factor), self.cfg, "set position rate")
-        for setter in (t.set_rate_battery, t.set_rate_landed_state, t.set_rate_in_air,
-                       t.set_rate_imu):
+        # IMU carries the simulated clock, so it runs as fast as position (0.2 s steps at x10).
+        for setter in (t.set_rate_position, t.set_rate_imu):
+            await call(setter(rates.position / factor), self.cfg, f"{setter.__name__}")
+        for setter in (t.set_rate_battery, t.set_rate_landed_state, t.set_rate_in_air):
             await call(setter(rates.other / factor), self.cfg, f"{setter.__name__}")
         self.path.parent.mkdir(parents=True, exist_ok=True)
         # Open for the recorder's lifetime; closed in stop().

@@ -1219,8 +1219,11 @@ into file 23); the other numbers are kept so cross-references stay stable.
 *   **Proposed Changes**:
     *   `class TelemetryRecorder(drone, cfg, test_id)`:
         *   `async start()` first sets the rates of the streams that have a
-            MAVSDK rate call (position, battery, landed state, in_air, IMU)
-            to `telemetry_wall_hz / speed_factor`. PX4 is expected to
+            MAVSDK rate call to `telemetry_wall_hz / speed_factor`: position
+            and IMU at the position rate (IMU carries the simulated clock, so
+            this gives 0.2 s clock steps at ×10; at 1 Hz simulated the steps
+            were 1 s, which blurred the hover window in the first M2 run),
+            battery, landed state and in_air at the other rate. PX4 is expected to
             count rates in simulated time; if S2 shows rates are in wall-clock
             time, the division is dropped. Flight mode, armed state, mission
             progress, and health have no rate call.
@@ -1300,8 +1303,9 @@ into file 23); the other numbers are kept so cross-references stay stable.
     `@pytest.mark.scenario("hover_and_land.yaml")`.
 *   **Proposed Changes**:
     *   `wait_armable` → arm → `action.takeoff` (altitude from
-        `MIS_TAKEOFF_ALT`, set in the scenario's `px4_params`) → wait for
-        altitude within tolerance (`timeouts_wall_s.takeoff`) → hold for
+        `MIS_TAKEOFF_ALT`, set in the scenario's `px4_params`) → wait until
+        PX4 ends the takeoff (`TAKEOFF` then `HOLD`) and the altitude is
+        within tolerance (`timeouts_wall_s.takeoff`) → hold for
         `hover_s` simulated seconds (`timeouts_wall_s.hover`) while asserting
         altitude stays within tolerance (checked against recorded positions, not by sleeping) →
         `land` → `wait_landed_and_disarmed` (`timeouts_wall_s.land`) →
