@@ -5,6 +5,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"   # nightly: every suite 3 times, for the pass rate
 
 permissions:
   contents: read
@@ -32,7 +34,7 @@ jobs:
       fail-fast: false
       matrix:
         suite: [basic, survey, failsafes]
-        run: [1]
+        run: ${{ fromJSON(github.event_name == 'schedule' && '[1,2,3]' || '[1]') }}
         include:
           - suite: basic
             files: tests/test_smoke.py tests/test_basic_flight.py
@@ -56,3 +58,26 @@ jobs:
           name: results-${{ matrix.suite }}-${{ matrix.run }}
           path: artifacts/
           if-no-files-found: warn
+      # JUnit alone, so the report job does not download telemetry and ULogs.
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: junit-${{ matrix.suite }}-${{ matrix.run }}
+          path: artifacts/junit/
+          if-no-files-found: warn
+
+  report:
+    needs: sim
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: junit-*
+          path: artifacts/
+      # Reports only; a failed sim entry already makes the workflow red.
+      - run: python scripts/summarize.py artifacts/ >> "$GITHUB_STEP_SUMMARY"
