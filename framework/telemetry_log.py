@@ -58,7 +58,7 @@ class TelemetryRecorder:
             "in_air": t.in_air,
             "battery": t.battery,
             "health": t.health,
-            # mission_progress is added in M3, when a mission exists to report on.
+            "mission_progress": self.drone.mission.mission_progress,
         }
         for name, factory in streams.items():
             self._tasks[name] = asyncio.create_task(self._read(name, factory), name=name)

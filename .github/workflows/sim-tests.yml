@@ -31,11 +31,13 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        suite: [basic]
+        suite: [basic, survey]
         run: [1]
         include:
           - suite: basic
             files: tests/test_smoke.py tests/test_basic_flight.py
+          - suite: survey
+            files: tests/test_survey_mission.py
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

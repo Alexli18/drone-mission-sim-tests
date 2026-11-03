@@ -127,3 +127,27 @@ def assert_no_unexpected_modes(recorder, allowed: set, since_wall_s: float) -> N
     if unexpected:
         raise FlightAssertionError(f"only modes {sorted(allowed)}",
                                    f"also saw {unexpected}", recorder)
+
+
+def assert_waypoints_reached(recorder, waypoints_latlon, tol_m) -> float:
+    """Each waypoint was passed within ``tol_m``; returns the largest miss distance."""
+    positions = recorder.positions()
+    misses = []
+    for index, (lat, lon) in enumerate(waypoints_latlon):
+        closest = min((horizontal_distance_m(lat, lon, p[1], p[2]) for p in positions),
+                      default=math.inf)
+        misses.append((index, closest))
+    worst = max(distance for _, distance in misses)
+    missed = [f"#{i}: {d:.1f} m" for i, d in misses if d > tol_m]
+    if missed:
+        raise FlightAssertionError(f"every waypoint passed within {tol_m} m",
+                                   "missed " + ", ".join(missed), recorder)
+    return worst
+
+
+def assert_duration(start_sim_s, end_sim_s, bounds, recorder=None) -> float:
+    duration = end_sim_s - start_sim_s
+    if not bounds.min_s <= duration <= bounds.max_s:
+        raise FlightAssertionError(f"duration {bounds.min_s}–{bounds.max_s} s (simulated)",
+                                   f"{duration:.1f} s", recorder)
+    return duration

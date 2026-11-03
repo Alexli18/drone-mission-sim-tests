@@ -1,0 +1,13 @@
+name: survey_lawnmower
+type: mission
+description: Lawnmower survey over a 60 x 40 m rectangle, 10 m line spacing, 15 m altitude, 5 m/s.
+altitude_m: 15
+speed_m_s: 5
+area: {origin_north_m: 10, origin_east_m: 10, width_m: 60, height_m: 40, line_spacing_m: 10}
+# Hand calculation for the measured interval (first MISSION to mission finished),
+# in simulated seconds:
+#   implicit takeoff to MIS_TAKEOFF_ALT 15 m at ~1.5 m/s         ~10 s
+#   home to first waypoint (10 m N, 10 m E), 14 m at 5 m/s        ~3 s
+#   path: 7 lines x 40 m + 6 connectors x 10 m = 340 m at 5 m/s   68 s
+#   estimate T ~ 81 s; bounds 0.8 x T and 1.5 x T + 30 s
+duration_bounds_s: {min_s: 65, max_s: 151}
