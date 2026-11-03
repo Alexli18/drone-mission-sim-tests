@@ -68,8 +68,12 @@ pytest -m unit
 pytest -m sitl
 ```
 
-macOS is best-effort and not checked: Docker Desktop has no Linux-style host
-networking for UDP. CI is the source of truth.
+**Locally on macOS (Docker Desktop, Apple Silicon):** the same commands work;
+the image runs natively on arm64 and its entrypoint routes MAVLink to the Mac.
+SIH reaches only about half the requested speed there (×3.7 of ×10; ×8.7 on
+the CI runner). The flight tests still pass; the smoke test's speed-floor check
+is enforced only in CI and reported as a warning locally. Timing numbers in
+this README come from CI, which is the source of truth.
 
 ## Known limitations
 

@@ -125,8 +125,19 @@ def _free_tcp_port() -> int:
         return sock.getsockname()[1]
 
 
+class _OwnServerSystem(System):
+    """A System on a mavsdk_server that MavsdkServer starts and stops.
+
+    The library's ``__del__`` tries to stop a server it never started; at
+    interpreter exit that fails with "ImportError: sys.meta_path is None".
+    """
+
+    def __del__(self):
+        pass
+
+
 async def connect(cfg: Config, server: MavsdkServer) -> System:
-    drone = System(mavsdk_server_address="localhost", port=server.port)
+    drone = _OwnServerSystem(mavsdk_server_address="localhost", port=server.port)
     timeout_s = cfg.timeouts_wall_s.connect
     try:
         await call(drone.connect(), cfg, "connect to mavsdk_server")

@@ -45,10 +45,18 @@ if [[ ! -d "$log_dir" || -n "$(ls -A "$log_dir")" ]]; then
 fi
 log_dir="$(realpath "$log_dir")"
 
+# On Linux, run as the caller so the mounted data dir stays ours (the whole
+# XDG_DATA_HOME is mounted, so every folder PX4 creates belongs to us). Docker
+# Desktop (macOS) maps mount ownership itself, and the image's entrypoint must
+# run as root there: it rewrites PX4's MAVLink target to host.docker.internal.
+user_args=()
+if [[ "$(uname -s)" == Linux ]]; then
+  user_args=(--user "$(id -u):$(id -g)")
+fi
+
 # -t gives PX4's shell a TTY; without one it busy-loops on its prompt (spike S1).
-# The whole XDG_DATA_HOME is mounted so every folder PX4 creates is ours.
 docker run -d -t --pull never --network host --name "$name" \
-  --user "$(id -u):$(id -g)" \
+  ${user_args[@]+"${user_args[@]}"} \
   -e XDG_DATA_HOME=/px4data \
   -e PX4_SIM_MODEL="$model" \
   -e PX4_SIM_SPEED_FACTOR="$speed_factor" \
