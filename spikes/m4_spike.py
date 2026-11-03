@@ -107,6 +107,13 @@ async def run(spike):
         events["arm"] = await guarded("arm", drone.action.arm())
         events["start_mission"] = await guarded("start_mission", drone.mission.start_mission())
         if spike == "s9_fence_after":
+            # Upload only once the vehicle is airborne and flying the mission.
+            wait_start = time.monotonic()
+            while time.monotonic() - wait_start < 60:
+                mode = recorder.latest("flight_mode")
+                if recorder.latest("in_air") and mode is not None and mode.name == "MISSION":
+                    break
+                await asyncio.sleep(0.1)
             events["upload_geofence"] = await guarded("upload_geofence",
                                                       drone.geofence.upload_geofence(fence))
 
@@ -151,7 +158,12 @@ async def run(spike):
 
         positions_at_trigger = len(recorder.positions())
         obs_start = time.monotonic()
+        took_off = False
         while time.monotonic() - obs_start < 90:
+            took_off = took_off or bool(recorder.latest("in_air"))
+            if not took_off:  # do not mistake "not yet airborne" for "landed"
+                await asyncio.sleep(0.2)
+                continue
             landed = recorder.latest("landed_state")
             if (recorder.latest("armed") is False and landed is not None
                     and landed.name == "ON_GROUND"):

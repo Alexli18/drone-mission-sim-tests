@@ -4,6 +4,10 @@ name: spike-m4
 # Results are read from the job logs and written back into the design.
 on:
   workflow_dispatch:
+    inputs:
+      spikes:
+        description: JSON list of spikes to run
+        default: '["s5_link", "s6_iptables", "s5_rc", "s7_rc_stop", "s8_gps", "s9_fence_before", "s9_fence_after", "s9_maxdist"]'
 
 permissions:
   contents: read
@@ -15,8 +19,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        spike: [s5_link, s6_iptables, s5_rc, s7_rc_stop, s8_gps,
-                s9_fence_before, s9_fence_after, s9_maxdist]
+        spike: ${{ fromJSON(inputs.spikes) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
