@@ -35,7 +35,7 @@ jobs:
         run: [1]
         include:
           - suite: basic
-            files: tests/test_smoke.py
+            files: tests/test_smoke.py tests/test_basic_flight.py
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

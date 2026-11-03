@@ -10,6 +10,7 @@ import pytest
 import pytest_asyncio
 
 from framework.config import load_baseline_params, load_config
+from framework.mission import load_scenario
 from framework.sitl import (
     ARTIFACTS,
     MavsdkServer,
@@ -34,9 +35,19 @@ def test_id(request) -> str:
 
 
 @pytest.fixture
-def boot_params(cfg) -> dict:
-    # Tests without a scenario boot with the baseline alone; M2 adds scenario params.
-    return scaled_loss_params(load_baseline_params(), cfg)
+def scenario(request):
+    """The scenario from indirect parametrization or the ``scenario`` marker, else None."""
+    if hasattr(request, "param"):
+        return load_scenario(request.param)
+    marker = request.node.get_closest_marker("scenario")
+    return load_scenario(marker.args[0]) if marker else None
+
+
+@pytest.fixture
+def boot_params(cfg, scenario) -> dict:
+    # Tests without a scenario boot with the baseline alone.
+    params = scenario.px4_params if scenario else load_baseline_params()
+    return scaled_loss_params(params, cfg)
 
 
 @pytest.fixture

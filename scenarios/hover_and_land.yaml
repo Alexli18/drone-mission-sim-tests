@@ -1,0 +1,7 @@
+name: hover_and_land
+type: hover
+description: Arm, take off to 10 m, hover 10 simulated seconds, land, disarm.
+altitude_m: 10
+hover_s: 10
+px4_params:
+  MIS_TAKEOFF_ALT: 10   # takeoff altitude; overrides the baseline's 15

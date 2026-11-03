@@ -78,3 +78,52 @@ def horizontal_distance_m(lat1, lon1, lat2, lon2) -> float:
     dx = math.radians(lon2 - lon1) * math.cos(mean_lat)
     dy = math.radians(lat2 - lat1)
     return EARTH_RADIUS_M * math.hypot(dx, dy)
+
+
+async def wait_for_mode(recorder, mode: str, timeout_s, cfg):
+    await wait_until(lambda: recorder.latest("flight_mode") is not None
+                     and recorder.latest("flight_mode").name == mode,
+                     timeout_s, f"flight mode {mode}", recorder, cfg.poll_interval_s)
+
+
+async def wait_altitude(recorder, target_m, tol_m, timeout_s, cfg):
+    def reached():
+        pos = recorder.latest("position")
+        return pos is not None and abs(pos.relative_altitude_m - target_m) <= tol_m
+
+    await wait_until(reached, timeout_s, f"altitude {target_m} ± {tol_m} m", recorder,
+                     cfg.poll_interval_s)
+
+
+async def wait_landed_and_disarmed(recorder, timeout_s, cfg):
+    def done():
+        landed = recorder.latest("landed_state")
+        return (landed is not None and landed.name == "ON_GROUND"
+                and recorder.latest("armed") is False)
+
+    await wait_until(done, timeout_s, "landed and disarmed", recorder, cfg.poll_interval_s)
+
+
+def assert_altitude(recorder, target_m, tol_m, since_sim_s, until_sim_s) -> float:
+    """Every recorded altitude in the window is within tolerance; returns the max error."""
+    window = [p for p in recorder.positions()
+              if p[0] is not None and since_sim_s <= p[0] <= until_sim_s]
+    if not window:
+        raise FlightAssertionError("position samples during the hover", "none recorded",
+                                   recorder)
+    errors = [abs(p[3] - target_m) for p in window]
+    worst = max(errors)
+    if worst > tol_m:
+        raise FlightAssertionError(f"altitude within {target_m} ± {tol_m} m",
+                                   f"max error {worst:.2f} m over {len(window)} samples",
+                                   recorder)
+    return worst
+
+
+def assert_no_unexpected_modes(recorder, allowed: set, since_wall_s: float) -> None:
+    """No flight mode outside ``allowed`` appeared after ``since_wall_s`` (monotonic)."""
+    seen = [mode for _, wall, mode in recorder.mode_history() if wall >= since_wall_s]
+    unexpected = [mode for mode in seen if mode not in allowed]
+    if unexpected:
+        raise FlightAssertionError(f"only modes {sorted(allowed)}",
+                                   f"also saw {unexpected}", recorder)
