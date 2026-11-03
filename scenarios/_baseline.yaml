@@ -1,0 +1,13 @@
+# PX4 parameters every flight depends on. Scenario files may override any of
+# them; tests without a scenario boot with these alone. Spike S1 confirmed that
+# every name exists in PX4 v1.18.0-rc1 (CI run 41707210020).
+px4_params:
+  COM_FAIL_ACT_T: 5        # seconds of Hold before a failsafe action
+  RTL_RETURN_ALT: 30       # metres; Return climbs to this altitude
+  RTL_LAND_DELAY: 0        # land at once over home
+  COM_DISARM_LAND: 2       # seconds after landing before auto-disarm
+  MPC_XY_CRUISE: 5         # m/s in automatic modes, including Return
+  MIS_TAKEOFF_ALT: 15      # metres; implicit mission takeoff
+  MIS_TKO_LAND_REQ: 0      # missions need no explicit takeoff or landing item
+  NAV_DLL_ACT: 0           # data link failsafe off; only link_loss overrides it
+  SIM_BAT_MIN_PCT: 50      # percent; only low_battery lets the battery get low

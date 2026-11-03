@@ -7,6 +7,7 @@ This script is an experiment, not framework code.
 
 import argparse
 import asyncio
+import itertools
 import json
 import os
 import subprocess
@@ -131,7 +132,7 @@ async def s1_s2_s4(workdir):
         imu_last = await asyncio.wait_for(drone.telemetry.imu().__anext__(), 10)
         w1 = time.monotonic()
         sim = (imu_last.timestamp_us - imu_first.timestamp_us) / 1e6
-        gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+        gaps = [b - a for a, b in itertools.pairwise(stamps)]
         report("S4" if label == "idle" else "S2", phase=label,
                wall_s=round(w1 - w0, 2), imu_sim_s=round(sim, 2),
                effective_factor=round(sim / (w1 - w0), 2),

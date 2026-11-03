@@ -1,0 +1,54 @@
+name: sim-tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+      - run: shellcheck scripts/*.sh
+      - run: pytest -m unit
+      # Primes the image cache once per workflow run, so sim jobs do not pull.
+      - uses: ./.github/actions/px4-image
+
+  sim:
+    needs: unit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        suite: [basic]
+        run: [1]
+        include:
+          - suite: basic
+            files: tests/test_smoke.py
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - uses: ./.github/actions/px4-image
+      - run: >-
+          pytest -m sitl ${{ matrix.files }}
+          --junitxml=artifacts/junit/${{ matrix.suite }}-${{ matrix.run }}.xml
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: results-${{ matrix.suite }}-${{ matrix.run }}
+          path: artifacts/
+          if-no-files-found: warn

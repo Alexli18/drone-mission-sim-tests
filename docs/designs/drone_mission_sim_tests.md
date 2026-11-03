@@ -149,6 +149,21 @@ and the pass rule mentioned here are defined in the Technical Plan.
     `scenarios/_baseline.yaml` and `COM_RC_OVERRIDE`, to confirm that these
     names exist in this PX4 version, and records which flight mode PX4
     reports on the ground before arming.
+
+    **Result ([CI run 41707210020](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41707210020), 2026-11-03):**
+    *   Startup line: `INFO  [px4] Startup script returned successfully`.
+    *   The data directory is `$XDG_DATA_HOME/px4/rootfs/` (not
+        `…/rootfs/<instance>/fs/` as the docs say). ULog files are in
+        `px4/rootfs/log/<date>/`, next to `parameters.bson` and `dataman`.
+        The image runs fine under `--user` with the whole `XDG_DATA_HOME`
+        mounted.
+    *   All baseline names exist. `COM_RC_OVERRIDE` does **not** exist in
+        v1.18.0-rc1 (PX4 logs "Parameter COM_RC_OVERRIDE not found"); it is
+        removed from this design.
+    *   PX4 reports `HOLD` on the ground before arming.
+    *   Without a TTY, PX4's interactive shell (`pxh>`) prints its prompt in
+        a busy loop: about 12 million log lines in 40 s. The container is
+        therefore started with `-t` (a TTY), so the shell waits for input.
 *   **S2 — Boot time and effective speed factor (runs in M1; blocks M1
     timeouts).** PX4 publishes no boot-to-ready figure; its own tests allow
     25 s to connect, 30 s for health, and 45 s to be armable. The spike
@@ -165,6 +180,15 @@ and the pass rule mentioned here are defined in the Technical Plan.
     that the recorder actually receives position at about 50 Hz wall-clock
     (the largest gap between position messages), which checks the rate
     conversion described in Technical Plan, item 5.
+
+    **Result ([CI run 41707210020](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41707210020)):** boot to connected 1.0 s, to position and home OK
+    1.1 s, to armable 1.4 s (one sample). Effective speed factor 7.2 idle and
+    7.3 in flight, above the floor of 5, so ×10 stays. That run still had the
+    `pxh>` busy loop (S1); M1 re-measures with `-t`. Requesting 5 Hz position
+    gave 36 Hz wall-clock (5 × 7.2), which confirms that PX4 counts stream
+    rates in simulated time. The largest gap between position messages was
+    0.04 s. Timeouts in config use max(measured × 1.5, 15 s), because one
+    sample is not a p95.
 *   **S3 — Loss timeouts under speed-up (runs in M1; blocks M4).** When
     `PX4_SIM_SPEED_FACTOR` is set, PX4's startup script sets
     `COM_DL_LOSS_T` and `COM_RC_LOSS_T` from the speed factor, using the `bc`
@@ -192,11 +216,23 @@ and the pass rule mentioned here are defined in the Technical Plan.
         there is no switch in config or code. The after-boot read-back
         checks the value PX4 holds against the recorded outcome, so a
         change in a later PX4 version is caught.
+
+    **Result ([CI run 41707210020](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41707210020)): outcome (a) for both parameters.** `bc` is present, and
+    without an override PX4's script sets `COM_DL_LOSS_T` to 100 and
+    `COM_RC_LOSS_T` to 10.0 at ×10. With `PX4_PARAM_*` set, the read-back
+    equals the configured value (7 → 7, 13 → 13; 0.3 → 0.3, 0.7 → 0.7), so
+    the override is applied after the script and the framework must scale.
+    `COM_DL_LOSS_T` is an INT32 parameter, `COM_RC_LOSS_T` a FLOAT.
+    `scaled_loss_params` (file 8) multiplies both by the speed factor.
 *   **S4 — Simulated clock source (runs in M1; blocks M2).** Mission
     durations are measured in simulated time, because the simulator runs
     slower than the requested speed factor when the CPU is busy. Is the
     MAVSDK `telemetry.imu()` field `timestamp_us` simulated time under
     lockstep? Fallbacks are in Risks & Mitigations.
+
+    **Result ([CI run 41707210020](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41707210020)): yes.** Over 10.0 wall-clock seconds the IMU
+    `timestamp_us` advanced 72.2 s, matching the effective factor. It is the
+    simulated clock; no fallback is needed.
 
 ### Check after M2
 
@@ -399,8 +435,8 @@ flowchart LR
     A new, empty host directory per test is mounted as the container's
     `XDG_DATA_HOME`, so ULog files survive the container and no state leaks
     between tests. The PX4 docs give the data directory for this image as
-    `$XDG_DATA_HOME/px4/rootfs/<instance>/fs/`, with ULog files under
-    `log/`; S1 confirms it. The container is not started with `--rm`:
+    `$XDG_DATA_HOME/px4/rootfs/<instance>/fs/`; S1 found
+    `$XDG_DATA_HOME/px4/rootfs/` instead, with ULog files under `log/`. The container is not started with `--rm`:
     teardown saves its log, stops it, and then removes it, so a PX4 that
     crashes at boot still leaves its log lines.
 
@@ -533,7 +569,7 @@ result is written into this table, and only that mechanism is implemented.
 |---|---|---|---|
 | `gps_loss` | MAVSDK failure injection `SENSOR_GPS`, `OFF`, 60 simulated seconds after mission start. | `SYS_FAILURE_EN=1`, `EKF2_NOAID_TOUT=5000000`, `COM_POS_FS_EPH=5` | Leaves Mission; lands and disarms. Landing position not checked (descent is blind). |
 | `link_loss` | **If S5 passes:** failure injection `SYSTEM_MAVLINK_SIGNAL`, `OFF` at waypoint 3. **If S5 fails:** the S6 mechanism, first choice `iptables` dropping test → PX4 traffic at waypoint 3. | `NAV_DLL_ACT=2`, `COM_DL_LOSS_T=10`, `COM_DLL_EXCEPT=0`; `SYS_FAILURE_EN=1` if S5 passes | Return (Hold first is allowed); lands within the home tolerance; disarms. |
-| `rc_loss` | Manual control input (neutral sticks: x = y = r = 0, z = 0.5) is streamed at 50 Hz wall-clock from before arming (a 0.2 s gap in simulated time at ×10, below `COM_RC_LOSS_T` = 0.5 s even before any S3 scaling). **If S5 passes:** failure injection `SYSTEM_RC_SIGNAL`, `OFF` at waypoint 3. **If S5 fails:** the stream stops at waypoint 3. | `COM_RC_IN_MODE=1`, `COM_RC_OVERRIDE=0`, `NAV_RCL_ACT=2`, `COM_RCL_EXCEPT=0`, `COM_RC_LOSS_T=0.5`; `SYS_FAILURE_EN=1` if S5 passes | Return (Hold first is allowed); lands within the home tolerance; disarms. |
+| `rc_loss` | Manual control input (neutral sticks: x = y = r = 0, z = 0.5) is streamed at 50 Hz wall-clock from before arming (a 0.2 s gap in simulated time at ×10, below `COM_RC_LOSS_T` = 0.5 s even before any S3 scaling). **If S5 passes:** failure injection `SYSTEM_RC_SIGNAL`, `OFF` at waypoint 3. **If S5 fails:** the stream stops at waypoint 3. | `COM_RC_IN_MODE=1`, `NAV_RCL_ACT=2`, `COM_RCL_EXCEPT=0`, `COM_RC_LOSS_T=0.5`; `SYS_FAILURE_EN=1` if S5 passes | Return (Hold first is allowed); lands within the home tolerance; disarms. |
 | `low_battery` | SIH battery simulator drains fast (see Alternative H for why not failure injection). | `SIM_BAT_ENABLE=1`, `SIM_BAT_DRAIN≈150` (derived from mission length; implementation plan, files 29–33), `SIM_BAT_MIN_PCT=2`, `BAT_LOW_THR=0.30`, `BAT_CRIT_THR=0.20`, `BAT_EMERGEN_THR=0.05`, `COM_LOW_BAT_ACT=3` | Return at 20% (Hold first is allowed), then Land at 5% (asserted with `then_mode: LAND`); lands and disarms. Landing position not checked. |
 | `geofence_breach` | Inclusion polygon (the allowed area) that contains home but not the whole survey; mechanism confirmed by S9. The survey path leaves the fence. | `GF_ACTION=3`, `GF_PREDICT=0` (or `GF_MAX_HOR_DIST=30` instead of the polygon, per S9) | Return (Hold first is allowed); lands within the home tolerance; disarms. |
 
@@ -566,7 +602,6 @@ Values without a unit are PX4 enums or flags.
 | `COM_POS_FS_EPH=5` | Horizontal position error in metres above which PX4 treats position as lost. |
 | `GF_PREDICT=0` | Geofence acts on the current position, not a predicted one. |
 | `COM_RC_IN_MODE=1` | Manual control comes only over MAVLink. |
-| `COM_RC_OVERRIDE=0` | Stick input never overrides an automatic mode, so the neutral stream cannot cause a mode change. |
 | `SIM_BAT_ENABLE=1` | Turns on the simulated battery. |
 | `SIM_BAT_DRAIN` | Seconds of simulated time to drain from 100% to 0% while armed. |
 | `SIM_BAT_MIN_PCT` | Floor the simulated battery never drops below, in **percent**. The baseline sets 50, so no scenario except `low_battery` (which sets 2) can reach a low level. |
@@ -1032,11 +1067,11 @@ into file 23); the other numbers are kept so cross-references stay stable.
       position: 50
       other: 10
     timeouts_wall_s:               # guards against hangs
-      container_start: 60
-      connect: 30
+      container_start: 30          # S2: boot to startup line ~1 s
+      connect: 15                  # S2: 1.0 s
       mavsdk_call: 30              # asyncio.wait_for on direct MAVSDK calls
-      health: 60
-      armable: 60
+      health: 15                   # S2: 1.1 s
+      armable: 15                  # S2: 1.4 s
       takeoff: 60
       hover: 60                    # basic flight hover phase
       mission_start: 30            # until the first MISSION after start_mission
@@ -1051,8 +1086,8 @@ into file 23); the other numbers are kept so cross-references stay stable.
     min_effective_speed_ratio: 0.5 # floor = ratio × speed_factor; S2 threshold
     ```
 
-    Timeout values above are starting values. S2 replaces each with the
-    measured p95 × 1.5, rounded up to whole seconds. The S3 outcome is not a
+    Timeout values follow S2: max(measured × 1.5, 15 s) for the boot
+    waits; the flight timeouts are re-checked when M2–M4 have real runs. The S3 outcome is not a
     config value; it is recorded in this design and implemented directly
     (file 8).
 
@@ -1088,7 +1123,7 @@ into file 23); the other numbers are kept so cross-references stay stable.
     *   `--log-dir` must be an existing, empty directory (created by
         `SitlInstance`); the script resolves it with `realpath` and fails
         otherwise.
-    *   Runs `docker run -d --pull never --network host --name <name>
+    *   Runs `docker run -d -t --pull never --network host --name <name>
         --user "$(id -u):$(id -g)" -e XDG_DATA_HOME=/px4data -e
         PX4_SIM_MODEL=<model> -e PX4_SIM_SPEED_FACTOR=<n> -e PX4_HOME_LAT=…
         -e PX4_HOME_LON=… -e PX4_HOME_ALT=… -e PX4_PARAM_<NAME>=<VALUE> …
@@ -1096,8 +1131,9 @@ into file 23); the other numbers are kept so cross-references stay stable.
         whole `XDG_DATA_HOME` is mounted, so every folder PX4 creates under it
         belongs to the runner's user (Docker would create parent folders of a
         deeper target as root). ULog files end up in
-        `<log-dir>/px4/rootfs/0/fs/log/`. `--pull never` makes a missing local image fail loudly
-        instead of pulling.
+        `<log-dir>/px4/rootfs/log/` (S1). `--pull never` makes a missing
+        local image fail loudly instead of pulling. `-t` gives PX4's shell a
+        TTY, so it does not busy-loop on a closed stdin (S1).
     *   Polls `docker logs <name> 2>&1 | grep -F "<S1 line>" >/dev/null` in a
         bash loop on elapsed seconds (0.5 s poll interval, the only delay)
         until the line appears or `--timeout` passes. On timeout it prints the
@@ -1161,17 +1197,17 @@ into file 23); the other numbers are kept so cross-references stay stable.
             with `timeouts_wall_s.mavsdk_call`, and looks each name up in
             `int_params` or `float_params`, so PX4 decides the type (YAML
             writes `5` for FLOAT parameters such as `COM_FAIL_ACT_T`).
-        *   Expected value: the boot value. Under S3 outcome (b) a loss
-            timeout is expected at boot value × speed factor; under outcome
-            (c), at the value recorded in this design.
+        *   Expected value: the boot value (S3 gave outcome (a), so the boot
+            set already holds the scaled loss timeouts).
         *   INT32 values are compared exactly, FLOAT values with
             `math.isclose(rel_tol=1e-6)`. A name in neither list is reported
             as "unknown to PX4".
         *   Fails with a table of name, expected, and actual if any differ.
             Called by the `drone` fixture.
-    *   `def scaled_loss_params(params: dict, cfg) -> dict`: written only if
-        S3 gives outcome (a) for a parameter; it multiplies that parameter by
-        the speed factor before boot. No boot-parameter scaling is needed for
+    *   `def scaled_loss_params(params: dict, cfg) -> dict`: S3 gave outcome
+        (a) for both, so it multiplies `COM_DL_LOSS_T` (INT32, result rounded
+        to int) and `COM_RC_LOSS_T` (FLOAT) by the speed factor before boot,
+        when present. No boot-parameter scaling is needed for
         outcomes (b) and (c); their only code is the expected-value rule in
         `assert_params`.
 
@@ -1423,7 +1459,7 @@ into file 23); the other numbers are kept so cross-references stay stable.
         | `gps_loss` | `SYS_FAILURE_EN`, `EKF2_NOAID_TOUT`, `COM_POS_FS_EPH` |
         | `link_loss` (S5 passes) | `SYS_FAILURE_EN`, `NAV_DLL_ACT`, `COM_DLL_EXCEPT`, `COM_FAIL_ACT_T`, `COM_DL_LOSS_T`¹ |
         | `link_loss` (S6 mechanism 1 or 2) | `NAV_DLL_ACT`, `COM_DLL_EXCEPT`, `COM_FAIL_ACT_T`, `COM_DL_LOSS_T`¹ |
-        | `rc_loss` (S5 passes) | `SYS_FAILURE_EN`, `COM_RC_IN_MODE`, `COM_RC_OVERRIDE`, `NAV_RCL_ACT`, `COM_RCL_EXCEPT`, `COM_FAIL_ACT_T`, `COM_RC_LOSS_T`¹ |
+        | `rc_loss` (S5 passes) | `SYS_FAILURE_EN`, `COM_RC_IN_MODE`, `NAV_RCL_ACT`, `COM_RCL_EXCEPT`, `COM_FAIL_ACT_T`, `COM_RC_LOSS_T`¹ |
         | `rc_loss` (S7) | as above without `SYS_FAILURE_EN` |
         | `low_battery` | `SIM_BAT_ENABLE`, `SIM_BAT_DRAIN`, `SIM_BAT_MIN_PCT`, `BAT_LOW_THR`, `BAT_CRIT_THR`, `BAT_EMERGEN_THR`, `COM_LOW_BAT_ACT` |
         | `geofence_breach` (S9 mechanism 1 or 2) | `GF_ACTION`, `GF_PREDICT` |
@@ -1674,8 +1710,8 @@ into file 23); the other numbers are kept so cross-references stay stable.
         `expected.leave_mode: MISSION`, `max_dist_from_home_m: null`.
     *   **`link_loss`:** as in the schema example in file 13.
     *   **`rc_loss`:**
-        *   `px4_params: {COM_RC_IN_MODE: 1, COM_RC_OVERRIDE: 0, NAV_RCL_ACT:
-            2, COM_RCL_EXCEPT: 0, COM_RC_LOSS_T: 0.5}`, plus `SYS_FAILURE_EN:
+        *   `px4_params: {COM_RC_IN_MODE: 1, NAV_RCL_ACT: 2, COM_RCL_EXCEPT:
+            0, COM_RC_LOSS_T: 0.5}`, plus `SYS_FAILURE_EN:
             1` if S5 passes for `rc_signal`. `COM_RC_LOSS_T` follows its own
             S3 outcome.
         *   Trigger `{type: at_waypoint, value: 3}`.

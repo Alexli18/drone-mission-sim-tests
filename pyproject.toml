@@ -1,0 +1,39 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "drone-mission-sim-tests"
+version = "0.1.0"
+description = "Simulation-based tests for PX4 drone missions: SIH SITL, failure injection, CI gates"
+requires-python = ">=3.11"
+dependencies = [
+    "mavsdk-grpc==4.0.5",
+    "pytest==9.2.0",
+    "pytest-asyncio==1.4.1.post1",
+    "PyYAML==6.0.3",
+]
+
+[project.optional-dependencies]
+dev = ["ruff==0.17.3"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["framework"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "sitl: needs a running PX4 SITL container",
+    "unit: runs without a simulator",
+    "scenario(file): the scenario file a test flies",
+]
+junit_family = "xunit1"
+junit_logging = "system-out"
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+extend-select = ["I"]

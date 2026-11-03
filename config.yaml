@@ -1,0 +1,31 @@
+# Single source of configuration. See docs/designs/drone_mission_sim_tests.md,
+# "Configuration" and file 3 of the implementation plan.
+px4:
+  image: px4io/px4-sitl:v1.18.0-rc1
+  digest: sha256:39d5a950208a5a45fccbbb0670bd8716663ed0b350ef738447581395e0c92d97
+  model: sihsim_quadx
+  speed_factor: 10
+  home: {lat: 47.397742, lon: 8.545594, alt: 488.0}   # passed to PX4 as PX4_HOME_*; same as PX4's default SITL home
+mavlink:
+  api_url: udpin://0.0.0.0:14540
+telemetry_wall_hz:             # target wall-clock rates (divided by speed_factor for PX4)
+  position: 50
+  other: 10
+timeouts_wall_s:               # guards against hangs; boot values from spike S2: max(measured x 1.5, 15 s)
+  container_start: 30          # S2: startup line after ~1 s
+  connect: 15                  # S2: 1.0 s
+  mavsdk_call: 30              # asyncio.wait_for on direct MAVSDK calls
+  health: 15                   # S2: 1.1 s
+  armable: 15                  # S2: 1.4 s
+  takeoff: 60
+  hover: 60                    # basic flight hover phase
+  mission_start: 30            # until the first MISSION after start_mission
+  land: 120
+  mission: 300
+  failsafe: 180
+tolerances:
+  altitude_m: 1.0
+  waypoint_m: 3.0
+  home_m: 5.0
+poll_interval_s: 0.1
+min_effective_speed_ratio: 0.5 # floor = ratio x speed_factor; S2 threshold
