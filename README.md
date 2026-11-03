@@ -9,11 +9,11 @@ model, headless and CPU-only on free GitHub Actions runners. Python tests
 scenario fails. The goal is to show simulation-based validation with mission
 scenarios as data, failure injection, and CI quality gates.
 
-**Status: milestone M1 of 5.** This README claims only what CI shows; later
-milestones (basic flight, survey missions, failsafes, reports) are designed
-but not built yet. See the [design](docs/designs/drone_mission_sim_tests.md).
+**Status: milestone M2 of 5.** This README claims only what CI shows; later
+milestones (survey missions, failsafes, reports) are designed but not built
+yet. See the [design](docs/designs/drone_mission_sim_tests.md).
 
-## What CI verifies today (M1)
+## What CI verifies today (M1–M2)
 
 | Check | Evidence |
 |---|---|
@@ -21,7 +21,8 @@ but not built yet. See the [design](docs/designs/drone_mission_sim_tests.md).
 | Every baseline PX4 parameter is read back after boot with the value the test set | `assert_params` in the same run |
 | The simulation runs at least half the requested ×10 speed | same run: effective speed factor 8.7 |
 | The PX4 image comes from the Actions cache, not Docker Hub, in the test jobs | same run: `Loaded image: px4-sitl-pinned:39d5a950208a` |
-| Config loading and validation | `tests/unit/test_config.py` (8 tests) |
+| Basic flight: arm, take off to 10 m, hover 10 simulated seconds within ±1 m, land, disarm, with no mode other than Ready/Takeoff/Hold/Land | `tests/test_basic_flight.py`, green on 5 consecutive manual runs with no retries: [1](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710667007), [2](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710677497), [3](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710688146), [4](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710698804), [5](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710708798); max hover altitude error 0.37–0.68 m |
+| Config and scenario loading and validation | `tests/unit/` (14 tests) |
 
 The open questions that blocked M1 were answered by spike experiments in CI
 ([run 41707210020](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41707210020));
