@@ -184,7 +184,9 @@ and the pass rule mentioned here are defined in the Technical Plan.
     **Result ([CI run 41707210020](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41707210020)):** boot to connected 1.0 s, to position and home OK
     1.1 s, to armable 1.4 s (one sample). Effective speed factor 7.2 idle and
     7.3 in flight, above the floor of 5, so ×10 stays. That run still had the
-    `pxh>` busy loop (S1); M1 re-measures with `-t`. Requesting 5 Hz position
+    `pxh>` busy loop (S1). Re-measured in M1 with `-t`
+    ([CI run 41708569365](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41708569365)):
+    boot to ready 2.2 s, effective speed factor 8.7, container log 62 lines. Requesting 5 Hz position
     gave 36 Hz wall-clock (5 × 7.2), which confirms that PX4 counts stream
     rates in simulated time. The largest gap between position messages was
     0.04 s. Timeouts in config use max(measured × 1.5, 15 s), because one
