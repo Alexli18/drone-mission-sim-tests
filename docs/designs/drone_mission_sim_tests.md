@@ -1576,7 +1576,12 @@ into file 23); the other numbers are kept so cross-references stay stable.
     *   `duration_bounds_s: {min_s, max_s}` is computed by hand for the
         measured interval (first `MISSION` to `is_mission_finished`): the
         implicit takeoff to `MIS_TAKEOFF_ALT`, the flight from home to the
-        first waypoint, plus path length / speed, at mission altitude. Lower bound 0.8×, upper bound 1.5× + 30 s. The
+        first waypoint, plus path length / speed, at mission altitude.
+        The first estimate (81 s, constant 5 m/s) was wrong: the first CI run
+        ([41712414581](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41712414581))
+        took 141.6 s, because PX4 nearly stops at each 90° corner (about
+        3.2 m/s average on a line) and the takeoff with spool-up takes about
+        20 s. The estimate now uses those measured legs (T ≈ 141 s). Lower bound 0.8×, upper bound 1.5× + 30 s. The
         calculation is written in a YAML comment.
 
 #### 21. `tests/unit/test_mission.py` (Create, M2; extended M3, M4)
