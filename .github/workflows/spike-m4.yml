@@ -1,0 +1,33 @@
+name: spike-m4
+
+# Runs the M4 spikes S5-S9 once, on demand, one job per fault mechanism.
+# Results are read from the job logs and written back into the design.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spike:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        spike: [s5_link, s6_iptables, s5_rc, s7_rc_stop, s8_gps,
+                s9_fence_before, s9_fence_after, s9_maxdist]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e .
+      - uses: ./.github/actions/px4-image
+      - run: python spikes/m4_spike.py ${{ matrix.spike }}
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike-m4-${{ matrix.spike }}
+          path: artifacts/
+          if-no-files-found: ignore
