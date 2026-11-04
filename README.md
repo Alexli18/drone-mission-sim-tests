@@ -154,7 +154,7 @@ not scenarios.
     motor makes the quadrotor fall with no mode change. None of these is a
     scenario; see the design's "Additions after M5".
 *   After GPS loss the landing position is not checked: the reported
-    position is the estimator's dead-reckoning guess, which drifted hundreds
-    of metres in CI.
+    position is the estimator's dead-reckoning guess, which ended 93–519 m
+    from home in CI runs 41719048626 and 41819419053.
 *   GitHub disables scheduled workflows after 60 days without repository
     activity (this stops the nightly runs).
