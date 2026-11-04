@@ -749,7 +749,9 @@ exactly one place.
 ### CI workflow (`.github/workflows/sim-tests.yml`)
 
 *   **Triggers**: push, pull request, nightly schedule, and manual
-    `workflow_dispatch` (no inputs). The M2 "5 green runs in a row" check is
+    `workflow_dispatch` with one input, `runs` (`1` by default, or `3` to
+    repeat every suite as the nightly run does; added at M5 after GitHub
+    skipped the first scheduled run). The M2 "5 green runs in a row" check is
     5 consecutive workflow runs started with `workflow_dispatch`, linked from
     the README.
 *   **Runners**: `ubuntu-24.04`. The PRD names `ubuntu-latest`; this design
@@ -1666,8 +1668,10 @@ into file 23); the other numbers are kept so cross-references stay stable.
 
 *   **Type / Scope**: CI workflow.
 *   **Proposed Changes**:
-    *   `on`: `push` to `main`, `pull_request`, `workflow_dispatch` (no
-        inputs); `schedule` (nightly, `cron: "0 3 * * *"`) is added at M5.
+    *   `on`: `push` to `main`, `pull_request`, `workflow_dispatch` (input
+        `runs`: `1` or `3`); `schedule` (nightly, `cron: "17 3 * * *"`, off
+        the hour because GitHub delays or drops runs scheduled on it) is
+        added at M5.
         Pushing only `main` avoids running a same-repository pull request
         twice.
     *   `runs-on: ubuntu-24.04` for every job; `permissions: contents: read`.
@@ -1691,8 +1695,8 @@ into file 23); the other numbers are kept so cross-references stay stable.
         *   **Matrix:** `suite` is a real dimension (`[basic]` at M1–M2,
             `[basic, survey]` at M3, `[basic, survey, failsafes]` from M4),
             and `run` is a real dimension from M5:
-            `${{ fromJSON(github.event_name == 'schedule' && '[1,2,3]' ||
-            '[1]') }}`; before M5 it is the fixed list `[1]`, so names are
+            `${{ fromJSON((github.event_name == 'schedule' || inputs.runs ==
+            '3') && '[1,2,3]' || '[1]') }}`; before M5 it is the fixed list `[1]`, so names are
             always `<suite>-<run>`. `include` only attaches `files` to an
             existing `suite` value: `{suite: basic, files: "tests/test_smoke.py
             tests/test_basic_flight.py"}` (M1: `tests/test_smoke.py` only),

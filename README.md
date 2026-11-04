@@ -69,7 +69,7 @@ All pins live in `config.yaml` and `pyproject.toml`.
 
 **In CI:** every push to `main` and every pull request runs the `sim-tests`
 workflow (unit job, then one simulator job per suite, then a report job). It
-can also be started by hand from the Actions tab. A nightly schedule (03:00
+can also be started by hand from the Actions tab. A nightly schedule (03:17
 UTC) runs every suite 3 times, and the report adds a pass rate per test; the
 README will link it once it has run.
 
