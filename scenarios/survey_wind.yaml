@@ -1,0 +1,11 @@
+name: survey_wind
+type: mission
+description: The 60 x 40 m lawnmower survey with a steady 5 m/s wind from the west (blowing east, across the lines).
+altitude_m: 15
+speed_m_s: 5
+area: {origin_north_m: 10, origin_east_m: 10, width_m: 60, height_m: 40, line_spacing_m: 10}
+px4_params: {SIH_WIND_N: 0.0, SIH_WIND_E: 5.0}   # SIH wind velocity in m/s, north and east components
+# Same path and bounds as survey_lawnmower (T ~ 141 simulated s): the test is
+# that PX4 still passes every waypoint within 3 m with a crosswind as strong
+# as the cruise speed; bounds 0.8 x T and 1.5 x T + 30 s.
+duration_bounds_s: {min_s: 113, max_s: 242}

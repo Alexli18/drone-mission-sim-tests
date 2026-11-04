@@ -976,6 +976,29 @@ truth.
 | Local runs on macOS: UDP networking, `mavsdk_server` for arm64 | Local runs may not work | Best-effort only. The README states what was checked; CI is the source of truth. |
 | GitHub disables schedules after 60 days without activity | Nightly evidence stops | Stated in the README. |
 
+## Additions after M5
+
+Three scenarios were added after M5 as YAML only, with no framework change:
+
+*   `survey_corridor` (mission): a 20 × 100 m corridor at 20 m and 8 m/s,
+    with duration bounds from the corner behavior measured for
+    `survey_lawnmower` (estimate 90 simulated s; first local flight 86.6 s).
+*   `survey_wind` (mission): the lawnmower survey with a 5 m/s crosswind
+    (`SIH_WIND_E: 5`); the waypoint and duration checks are unchanged.
+*   `rc_loss_wind` (failsafe): `rc_loss` with the same crosswind; Return must
+    still land within 5 m of home.
+
+A local spike (`spikes/extra_faults_spike.py`, 2026-11-04) tried three more
+MAVSDK failure injections during the failsafe survey. None became a scenario:
+
+*   `SENSOR_BARO` and `SENSOR_MAG`, `OFF`: the command returns SUCCESS, but
+    PX4 sends no warning, the mode does not change, and the mission finishes
+    normally. The telemetry cannot show whether the fault took effect, so a
+    test would assert nothing.
+*   `SYSTEM_MOTOR` instance 1, `OFF` (with `CA_FAILURE_MODE=1`,
+    `FD_ACT_EN=1`, `COM_ACT_FAIL_ACT=2`): the quadrotor falls without a mode
+    change. There is no recoverable behavior to assert.
+
 ## Future Improvements
 
 *   **ROS 2 sensor bridge (PRD M6)**: A ROS 2 node, connected over uXRCE-DDS,

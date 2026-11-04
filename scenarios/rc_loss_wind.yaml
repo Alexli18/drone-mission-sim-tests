@@ -1,0 +1,19 @@
+name: rc_loss_wind
+type: failsafe
+description: Manual control stops at waypoint 3 with a steady 5 m/s wind from the west; the vehicle must still return and land near home.
+altitude_m: 15
+speed_m_s: 5
+area: {origin_north_m: 10, origin_east_m: 10, width_m: 100, height_m: 100, line_spacing_m: 10}
+px4_params: {COM_RC_IN_MODE: 1, NAV_RCL_ACT: 2, COM_RCL_EXCEPT: 0, COM_RC_LOSS_T: 0.5, SIH_WIND_E: 5.0}
+# Mechanism (spikes S5/S7): built-in rc_signal injection is unsupported, so the
+# test streams neutral sticks from before arming and stops at the trigger.
+# COM_RC_LOSS_T is scaled x10 (S3): ~5 s + 5 s Hold.
+failure:
+  kind: rc_loss
+  trigger: {type: at_waypoint, value: 3}
+expected:
+  mode_reached: RETURN_TO_LAUNCH
+  allowed_before: [HOLD]
+  landed: true
+  disarmed: true
+  max_dist_from_home_m: 5

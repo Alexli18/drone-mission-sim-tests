@@ -1,0 +1,13 @@
+name: survey_corridor
+type: mission
+description: Corridor survey (e.g. along a road or pipeline), 20 x 100 m, 10 m line spacing, 20 m altitude, 8 m/s.
+altitude_m: 20
+speed_m_s: 8
+area: {origin_north_m: 10, origin_east_m: 0, width_m: 20, height_m: 100, line_spacing_m: 10}
+# Duration of the measured interval (first MISSION to mission finished), in
+# simulated seconds, using the corner behavior measured for survey_lawnmower:
+#   implicit takeoff to MIS_TAKEOFF_ALT 15 m, then climb to 20 m   ~25 s
+#   3 lines x 100 m at ~5.5 m/s average (accelerate, near stop)    ~55 s
+#   2 connectors x 10 m at ~5.2 s each                             ~10 s
+#   estimate T ~ 90 s; bounds 0.8 x T and 1.5 x T + 30 s
+duration_bounds_s: {min_s: 72, max_s: 165}
