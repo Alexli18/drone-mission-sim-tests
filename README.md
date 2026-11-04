@@ -30,7 +30,8 @@ scenarios as data, failure injection, and CI quality gates.
 | The quality gate: breaking a scenario turns the workflow red with a clear message | throwaway branch with the link loss failsafe disabled (`NAV_DLL_ACT: 0`), [run 41720870716](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41720870716): red, `expected: the failsafe fires during the mission \| actual: mission finished first (failsafe never fired)`; the other 4 failsafe tests passed |
 | A `report` job writes a results table (result, wall time, recorded metrics) to the run's job summary | `scripts/summarize.py`, [run 41720851144](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41720851144) |
 | Every simulator job stays far under the 15-minute budget per job | [run 41720851144](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41720851144): whole workflow 2 min 56 s; longest job `failsafes` 2.2 min (5 flights), `survey` 0.8 min, `basic` 0.6 min, `unit` 0.3 min. |
-| Pass rate with every suite run 3 times: 8 of 8 tests passed 3/3, no retries | manual 3× run (same matrix as the nightly run), [run 41816091197](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41816091197): 9 simulator jobs in parallel, whole workflow 2 min 44 s. Three runs show the tests are not obviously flaky; they do not measure a rare failure rate |
+| More scenarios as YAML only: a 20 × 100 m corridor survey at 8 m/s, the lawnmower survey under a 5 m/s crosswind (`SIH_WIND_E`), and RC loss under the same crosswind | [run 41819419053](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41819419053), 3 runs each: corridor max waypoint miss 0.64–0.78 m, 86.8–88.8 simulated s (bounds 72–165); crosswind survey max miss 0.37–1.1 m, 148.6–151.4 s (about 12 s longer than without wind); RC loss under wind landed 0.1–0.9 m from home |
+| Pass rate with every suite run 3 times: 11 of 11 tests passed 3/3, no retries | manual 3× run (same matrix as the nightly run), [run 41819419053](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41819419053): 9 simulator jobs in parallel, whole workflow 3 min 3 s (an earlier 3× run with 8 tests: [run 41816091197](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41816091197)). Three runs show the tests are not obviously flaky; they do not measure a rare failure rate |
 | Config, scenario loading and validation, lawnmower geometry, coordinate conversion, failsafe pass rule, report generator | `tests/unit/` (40 tests) |
 
 The open questions that blocked M1 were answered by spike experiments in CI
@@ -148,6 +149,10 @@ not scenarios.
     that crosses the geofence ("Geofence violation for waypoint 3", spike
     S9). The geofence test therefore leaves the fence with offboard velocity
     setpoints, not by flying a mission.
+*   Barometer and magnetometer failure injection is accepted by PX4 in SIH
+    but has no visible effect (no warning, no mode change), and losing a
+    motor makes the quadrotor fall with no mode change. None of these is a
+    scenario; see the design's "Additions after M5".
 *   After GPS loss the landing position is not checked: the reported
     position is the estimator's dead-reckoning guess, which drifted hundreds
     of metres in CI.
