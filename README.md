@@ -9,9 +9,7 @@ model, headless and CPU-only on free GitHub Actions runners. Python tests
 scenario fails. The goal is to show simulation-based validation with mission
 scenarios as data, failure injection, and CI quality gates.
 
-**Status: milestones M1–M5 built.** This README claims only what CI shows.
-The nightly pass-rate run is scheduled but has not run yet, so no pass rate
-is claimed. See the [design](docs/designs/drone_mission_sim_tests.md).
+**Status: milestones M1–M5 done.** This README claims only what CI shows. See the [design](docs/designs/drone_mission_sim_tests.md).
 
 ## What CI verifies today
 
@@ -31,7 +29,8 @@ is claimed. See the [design](docs/designs/drone_mission_sim_tests.md).
 | Every failsafe test also fails if a failsafe fires before the fault, if the mission finishes without one, or if the wrong mode comes first (for example Land instead of Return) | pass rule in `framework/assertions.py`, covered by `tests/unit/test_assertions.py` |
 | The quality gate: breaking a scenario turns the workflow red with a clear message | throwaway branch with the link loss failsafe disabled (`NAV_DLL_ACT: 0`), [run 41720870716](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41720870716): red, `expected: the failsafe fires during the mission \| actual: mission finished first (failsafe never fired)`; the other 4 failsafe tests passed |
 | A `report` job writes a results table (result, wall time, recorded metrics) to the run's job summary | `scripts/summarize.py`, [run 41720851144](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41720851144) |
-| Every simulator job stays far under the 15-minute budget per job | [run 41720851144](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41720851144): whole workflow 2 min 56 s; longest job `failsafes` 2.2 min (5 flights), `survey` 0.8 min, `basic` 0.6 min, `unit` 0.3 min. The nightly 3× run is not measured yet |
+| Every simulator job stays far under the 15-minute budget per job | [run 41720851144](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41720851144): whole workflow 2 min 56 s; longest job `failsafes` 2.2 min (5 flights), `survey` 0.8 min, `basic` 0.6 min, `unit` 0.3 min. |
+| Pass rate with every suite run 3 times: 8 of 8 tests passed 3/3, no retries | manual 3× run (same matrix as the nightly run), [run 41816091197](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41816091197): 9 simulator jobs in parallel, whole workflow 2 min 44 s. Three runs show the tests are not obviously flaky; they do not measure a rare failure rate |
 | Config, scenario loading and validation, lawnmower geometry, coordinate conversion, failsafe pass rule, report generator | `tests/unit/` (40 tests) |
 
 The open questions that blocked M1 were answered by spike experiments in CI
@@ -70,8 +69,9 @@ All pins live in `config.yaml` and `pyproject.toml`.
 **In CI:** every push to `main` and every pull request runs the `sim-tests`
 workflow (unit job, then one simulator job per suite, then a report job). It
 can also be started by hand from the Actions tab. A nightly schedule (03:17
-UTC) runs every suite 3 times, and the report adds a pass rate per test; the
-README will link it once it has run.
+UTC) runs every suite 3 times, and the report adds a pass rate per test. GitHub
+skipped the first scheduled run, so the 3× evidence above comes from the same
+matrix started by hand (`gh workflow run sim-tests.yml -f runs=3`).
 
 **Locally (Linux, Docker, Python 3.11; `link_loss` needs `sudo iptables`):**
 
