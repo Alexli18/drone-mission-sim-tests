@@ -1,0 +1,5 @@
+# Flush.srv: release every held capture; samples without a pose become no_pose.
+---
+bool has_capture
+uint64 last_capture_id        # highest raw capture id received
+uint32 released_count         # captures released by this call

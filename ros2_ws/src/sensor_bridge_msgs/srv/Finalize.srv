@@ -1,0 +1,8 @@
+# Finalize.srv: flush, wait for the last capture, run the marker detector once.
+string line_id
+---
+bool success
+string message
+MarkerList markers
+uint64 last_capture_id        # last georeferenced capture the detector waited for
+uint32 captures_used          # usable captures processed

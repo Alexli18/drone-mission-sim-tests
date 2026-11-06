@@ -1,0 +1,4 @@
+# Stop.srv: the sensor stops emitting; a partial capture is discarded.
+---
+bool has_capture
+uint64 last_capture_id        # id of the last published capture

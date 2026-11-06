@@ -1,0 +1,18 @@
+# QoS of the recorded topics: reliable, volatile, keep-last 100, for
+# "ros2 bag record" (--qos-profile-overrides-path). The replay's bag_player uses the
+# same profile (RELIABLE in sensor_bridge.georeference_node).
+/survey/capture:
+  history: keep_last
+  depth: 100
+  reliability: reliable
+  durability: volatile
+/survey/pose_used:
+  history: keep_last
+  depth: 100
+  reliability: reliable
+  durability: volatile
+/survey/georef_capture:
+  history: keep_last
+  depth: 100
+  reliability: reliable
+  durability: volatile
