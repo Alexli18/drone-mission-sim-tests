@@ -25,9 +25,17 @@ log = logging.getLogger(__name__)
 class SitlInstance:
     """One PX4 SITL container with a fresh data directory."""
 
-    def __init__(self, cfg: Config, test_id: str, params: dict):
+    def __init__(self, cfg: Config, test_id: str, params: dict,
+                 env: dict[str, str] | None = None, dds_own_ip: bool = False):
+        """``env``: container environment (ROS tests: ``ROS_DOMAIN_ID``); M1-M5 pass none.
+
+        ``dds_own_ip``: on Docker Desktop, point PX4's DDS client at the
+        container's own address (``start_sitl.sh --dds-own-ip``, docs/qa-notes.md).
+        """
         self.cfg = cfg
         self.params = dict(params)
+        self.env = dict(env or {})
+        self.dds_own_ip = dds_own_ip
         self.name = f"sim-{test_id}"
         self.data_dir = ARTIFACTS / "ulog" / test_id
         self.log_file = ARTIFACTS / "logs" / f"{test_id}.log"
@@ -51,6 +59,10 @@ class SitlInstance:
         ]
         for name, value in self.params.items():
             cmd += ["--param", f"{name}={value}"]
+        for name, value in self.env.items():
+            cmd += ["--env", f"{name}={value}"]
+        if self.dds_own_ip:
+            cmd += ["--dds-own-ip"]
         result = subprocess.run(
             cmd, check=False, capture_output=True, text=True, timeout=timeout_s + 60
         )

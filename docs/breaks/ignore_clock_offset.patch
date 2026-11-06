@@ -1,0 +1,22 @@
+Deliberate break: the toy sensor stamps its samples with the true time and drops the
+configured clock offset and jitter (ros2_ws/src/survey_demo/.../sensor_sim.py).
+
+Expected: the unit tests go red: test_clock_offset_moves_the_stamps_but_not_the_truth and
+test_chain_shifts_every_marker_by_speed_times_clock_offset in tests/unit/test_markers.py.
+The flight test would fail the clock-shift rule of the clock scenarios as well (shift 0
+against speed x 20 ms = 2 cm), which is the layer that protects the scenario files
+themselves: a clock scenario whose sensor ignores its clock would otherwise pass quietly.
+
+diff --git a/ros2_ws/src/survey_demo/survey_demo/sensor_sim.py b/ros2_ws/src/survey_demo/survey_demo/sensor_sim.py
+index 972a1bf..5f16f56 100644
+--- a/ros2_ws/src/survey_demo/survey_demo/sensor_sim.py
++++ b/ros2_ws/src/survey_demo/survey_demo/sensor_sim.py
+@@ -103,7 +103,7 @@ class SensorSim:
+             jitter = self.rng_jitter.normal(0.0, self.clock_jitter_us) \
+                 if self.clock_jitter_us else 0.0
+             true_us.append(t)
+-            stamps.append(max(round(t + self.clock_offset_us + jitter), 0))
++            stamps.append(max(round(t), 0))  # DELIBERATE BREAK: the clock offset and jitter are dropped
+             pose = history.interpolate(t)
+             if pose is None:
+                 self.without_pose += 1

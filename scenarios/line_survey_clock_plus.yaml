@@ -1,0 +1,18 @@
+name: line_survey_clock_plus
+type: line_survey
+description: "The sensor clock 20 ms ahead of PX4 time: georeferenced positions shift by speed x offset."
+profile: low_altitude
+line: {start_north_m: 5.0, start_east_m: 0.0, heading_deg: 0.0, length_m: 12.0}
+sensor_height_m: 0.4
+sensor_offset_m: {x: 0.15, y: 0.0, z: 0.0}   # a lever arm: the georeferencing must apply it
+speed_m_s: 1.0
+markers:
+  - {s_m: 2.5, d_m: 0.0, amplitude: 0.8}
+  - {s_m: 6.0, d_m: 0.15, amplitude: 0.7}
+  - {s_m: 9.5, d_m: 0.0, amplitude: 0.8}
+clock: {offset_ms: 20.0, jitter_ms: 1.0}
+seed: 0
+px4_params:
+  # PX4's DDS time stamps follow its simulated clock only with synchronization off
+  # (docs/qa-notes.md, "DDS"): a stated divergence from a real vehicle.
+  UXRCE_DDS_SYNCT: 0

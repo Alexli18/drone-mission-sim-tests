@@ -80,10 +80,10 @@ drone-mission-sim-tests/
 - The workflow fails if any scenario fails. Add a README badge.
 - Track flakiness: run the suite 3× in a nightly scheduled job and report the pass rate.
 
-### M6 (optional): bridge to my sensor pipeline
-- A ROS 2 node (via uXRCE-DDS) subscribes to vehicle position during the survey mission and, at each survey point, publishes a "sensor reading" taken from a small pre-generated GPR dataset (a few gprMax traces committed to the repo).
-- A stub detector consumes the readings. The test checks that the target in the scene is flagged near its true position.
-- Only start this after M1–M5 are stable.
+### Extension (optional): bridge to a ROS 2 sensor pipeline
+- A ROS 2 node (via uXRCE-DDS) subscribes to vehicle position during a survey line and publishes timestamped "sensor captures" from a toy sensor that sees a few painted ground markers.
+- A georeferencing node places the captures on the line using the vehicle pose, and a detector consumes them. The test checks that every marker is found near its true position and none elsewhere.
+- Only start this after M1–M5 are stable. Implemented: see `docs/line-survey.md`.
 
 ## Engineering requirements
 - Every async wait has a timeout. No bare `sleep` for synchronization: poll the state with a deadline.

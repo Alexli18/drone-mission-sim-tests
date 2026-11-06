@@ -1,6 +1,7 @@
 """Load scenario YAML files (merged over the parameter baseline) and build missions.
 
-Types: ``hover`` (M2), ``mission`` (M3) and ``failsafe`` (M4).
+Types: ``hover`` (M2), ``mission`` (M3), ``failsafe`` (M4) and ``line_survey``
+(a survey line flown with a sensor; docs/line-survey.md).
 """
 
 from __future__ import annotations
@@ -66,6 +67,63 @@ class Expected:
 
 
 @dataclass(frozen=True)
+class SurveyLine:
+    """A straight survey line in metres from home; ``heading_deg`` clockwise from north.
+
+    Line frame: s along the line from its start, d cross-track, positive to the right
+    of the heading.
+    """
+
+    start_north_m: float
+    start_east_m: float
+    heading_deg: float
+    length_m: float
+
+    def project(self, north_m: float, east_m: float) -> tuple[float, float]:
+        """(s, d) of a (north, east) offset from home."""
+        h = math.radians(self.heading_deg)
+        dn, de = north_m - self.start_north_m, east_m - self.start_east_m
+        return dn * math.cos(h) + de * math.sin(h), -dn * math.sin(h) + de * math.cos(h)
+
+    def point(self, s_m: float, d_m: float = 0.0) -> tuple[float, float]:
+        """(north, east) offset from home of the line-frame point (s, d)."""
+        h = math.radians(self.heading_deg)
+        return (self.start_north_m + s_m * math.cos(h) - d_m * math.sin(h),
+                self.start_east_m + s_m * math.sin(h) + d_m * math.cos(h))
+
+
+@dataclass(frozen=True)
+class Clock:
+    """Sensor clock against PX4 time: a fixed offset and a Gaussian jitter (σ), in ms."""
+
+    offset_ms: float = 0.0
+    jitter_ms: float = 0.0
+
+
+@dataclass(frozen=True)
+class Marker:
+    """A ground marker at line-frame position (s, d); ``amplitude`` is the peak reading."""
+
+    s_m: float
+    d_m: float = 0.0
+    amplitude: float = 0.8
+
+
+@dataclass(frozen=True)
+class LineSurvey:
+    """The ``line_survey`` part of a scenario."""
+
+    line: SurveyLine
+    sensor_height_m: float
+    sensor_offset_m: tuple[float, float, float]   # body frame (x forward, y right, z down)
+    markers: tuple[Marker, ...]
+    clock: Clock
+    seed: int
+    schedule: str           # push | weekly
+    replay_check: bool
+
+
+@dataclass(frozen=True)
 class Scenario:
     name: str
     type: str
@@ -79,6 +137,7 @@ class Scenario:
     failure: Failure | None = None
     expected: Expected | None = None
     geofence: tuple[tuple[float, float], ...] | None = None  # (north_m, east_m) from home
+    survey: LineSurvey | None = None
 
 
 # Keys each scenario type requires and allows, besides name/type/description.
@@ -88,10 +147,15 @@ _SCHEMA = {
                 "optional": {"px4_params"}},
     "failsafe": {"required": {"altitude_m", "failure", "expected"},
                  "optional": {"px4_params", "speed_m_s", "area", "geofence"}},
+    "line_survey": {"required": {"line", "sensor_height_m", "speed_m_s", "markers"},
+                    "optional": {"px4_params", "sensor_offset_m", "clock", "seed", "schedule",
+                                 "replay_check"}},
 }
+_SCHEDULES = ("push", "weekly")
 _EXPECTED_KEYS = {"mode_reached", "leave_mode", "allowed_before", "then_mode", "landed",
                   "disarmed", "max_dist_from_home_m"}
 _COMMON = {"name", "type", "description"}
+_OPTIONAL_COMMON = {"profile"}   # a parameter overlay: scenarios/_<profile>.yaml
 
 
 def load_scenario(path: Path) -> Scenario:
@@ -113,7 +177,7 @@ def load_scenario(path: Path) -> Scenario:
     for key in sorted(schema["required"]):
         if key not in data:
             fail(f"missing field: {key}")
-    allowed = _COMMON | schema["required"] | schema["optional"]
+    allowed = _COMMON | _OPTIONAL_COMMON | schema["required"] | schema["optional"]
     for key in sorted(data):
         if key not in allowed:
             fail(f"unknown key: {key}")
@@ -122,7 +186,9 @@ def load_scenario(path: Path) -> Scenario:
     if not isinstance(own_params, dict):
         fail("px4_params must be a mapping")
     params = load_baseline_params()
-    params.update(own_params)  # the scenario wins over the baseline
+    if "profile" in data:
+        params.update(load_profile_params(data["profile"], fail))  # a named overlay
+    params.update(own_params)  # the scenario wins over the baseline and the profile
 
     def build(cls, key):
         if key not in data:
@@ -136,15 +202,24 @@ def load_scenario(path: Path) -> Scenario:
     def number(key):
         return float(data[key]) if key in data else None
 
-    failure = expected = geofence = None
+    failure = expected = geofence = survey = None
     if data["type"] == "failsafe":
         failure, expected, geofence = _failsafe_parts(data, params, fail)
+    if data["type"] == "line_survey":
+        if "UXRCE_DDS_DOM_ID" in own_params:
+            fail("px4_params must not set UXRCE_DDS_DOM_ID (the fixture sets the DDS domain "
+                 "through ROS_DOMAIN_ID)")
+        survey = _line_survey(data, fail)
+        # The commanded vehicle height: sensor height plus the offset below the vehicle.
+        altitude_m = survey.sensor_height_m + survey.sensor_offset_m[2]
+    else:
+        altitude_m = float(data["altitude_m"])
 
     return Scenario(
         name=data["name"],
         type=data["type"],
         description=data["description"],
-        altitude_m=float(data["altitude_m"]),
+        altitude_m=altitude_m,
         px4_params=params,
         hover_s=number("hover_s"),
         speed_m_s=number("speed_m_s"),
@@ -153,7 +228,75 @@ def load_scenario(path: Path) -> Scenario:
         failure=failure,
         expected=expected,
         geofence=geofence,
+        survey=survey,
     )
+
+
+def load_profile_params(name, fail) -> dict:
+    """``px4_params`` of ``scenarios/_<name>.yaml`` (a profile is a named parameter overlay)."""
+    if not isinstance(name, str) or not name.isidentifier():
+        fail(f"profile must be a name, got {name!r}")
+    path = SCENARIOS_DIR / f"_{name}.yaml"
+    if not path.is_file():
+        fail(f"profile: scenarios/_{name}.yaml does not exist")
+    with open(path) as f:
+        data = yaml.safe_load(f) or {}
+    if set(data) != {"px4_params"} or not isinstance(data["px4_params"], dict):
+        fail(f"scenarios/_{name}.yaml must hold exactly one key, px4_params")
+    return dict(data["px4_params"])
+
+
+def _line_survey(data, fail) -> LineSurvey:
+    """The ``line_survey`` keys, each check naming its key."""
+
+    def number(key, value, positive=False):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            fail(f"{key} must be a number, got {value!r}")
+        if positive and value <= 0:
+            fail(f"{key} must be a number > 0, got {value!r}")
+        return float(value)
+
+    def numbers(key, raw, keys):
+        if not isinstance(raw, dict) or set(raw) != set(keys):
+            fail(f"{key} must have exactly the keys {sorted(keys)}")
+        return {name: number(f"{key}.{name}", value) for name, value in raw.items()}
+
+    line = SurveyLine(**numbers("line", data["line"], SurveyLine.__dataclass_fields__))
+    if line.length_m <= 0:
+        fail(f"line.length_m must be > 0, got {line.length_m}")
+    offset = numbers("sensor_offset_m", data.get("sensor_offset_m", {"x": 0, "y": 0, "z": 0}), ("x", "y", "z"))
+    clock = Clock(**numbers("clock", data.get("clock", {"offset_ms": 0.0, "jitter_ms": 0.0}),
+                            Clock.__dataclass_fields__))
+    if clock.jitter_ms < 0:
+        fail(f"clock.jitter_ms must be >= 0, got {clock.jitter_ms}")
+    raw_markers = data["markers"]
+    if not isinstance(raw_markers, list):
+        fail("markers must be a list (empty for a clean line)")
+    markers = []
+    for index, raw in enumerate(raw_markers):
+        if (not isinstance(raw, dict) or "s_m" not in raw
+                or set(raw) - set(Marker.__dataclass_fields__)):
+            fail(f"markers[{index}] must be a mapping with s_m and optionally d_m, amplitude")
+        marker = Marker(**numbers(f"markers[{index}]", raw, set(raw)))
+        if not 0 <= marker.s_m <= line.length_m:
+            fail(f"markers[{index}].s_m must lie on the line (0 to {line.length_m})")
+        if not 0 < marker.amplitude <= 1:
+            fail(f"markers[{index}].amplitude must be in (0, 1], got {marker.amplitude}")
+        markers.append(marker)
+    seed = data.get("seed", 0)
+    if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
+        fail(f"seed must be an integer >= 0, got {seed!r}")
+    schedule = data.get("schedule", "push")
+    if schedule not in _SCHEDULES:
+        fail(f"schedule must be push or weekly, got {schedule!r}")
+    replay_check = data.get("replay_check", False)
+    if not isinstance(replay_check, bool):
+        fail(f"replay_check must be true or false, got {replay_check!r}")
+    return LineSurvey(line=line, sensor_height_m=number("sensor_height_m",
+                                                         data["sensor_height_m"], positive=True),
+                      sensor_offset_m=(offset["x"], offset["y"], offset["z"]),
+                      markers=tuple(markers), clock=clock, seed=seed, schedule=schedule,
+                      replay_check=replay_check)
 
 
 def _failsafe_parts(data, params, fail):
@@ -259,6 +402,14 @@ def lawnmower_waypoints(area: Area) -> list[tuple[float, float]]:
         ends = [(south, east), (north, east)]
         points += ends if i % 2 == 0 else ends[::-1]
     return points
+
+
+def line_waypoints(line: SurveyLine, run_m: float) -> list[tuple[float, float]]:
+    """Run-in point, line start, line end and run-out point as (north_m, east_m) from home.
+
+    ``run_m`` has no default: the test passes ``survey.pass_rule.run_m`` from config.yaml.
+    """
+    return [line.point(s) for s in (-run_m, 0.0, line.length_m, line.length_m + run_m)]
 
 
 def offset_to_latlon(home_lat: float, home_lon: float, north_m: float, east_m: float):

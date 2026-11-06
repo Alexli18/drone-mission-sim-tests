@@ -15,8 +15,8 @@ jobs:
     env:
       PX4_IMAGE: px4io/px4-sitl:v1.18.0-rc1@sha256:39d5a950208a5a45fccbbb0670bd8716663ed0b350ef738447581395e0c92d97
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - run: pip install mavsdk-grpc==4.0.5
@@ -26,7 +26,7 @@ jobs:
         run: python spikes/m1_spike.py --workdir "$RUNNER_TEMP/spike-out"
       - name: Upload data dirs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: spike-m1-data
           path: ${{ runner.temp }}/spike-out

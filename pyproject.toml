@@ -15,19 +15,27 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff==0.17.3"]
+# pytest-xdist: the unit job runs `pytest -m unit -n 2`.
+dev = ["ruff==0.17.3", "pytest-xdist==3.8.0"]
+# The ROS tests: the rosbridge client and the pure survey code (docs/ros-bridge.md).
+ros = ["roslibpy==1.7.0", "numpy==1.26.4"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["framework"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The pure sensor_bridge and survey_demo modules on the runner, without installing the
+# ROS packages.
+pythonpath = ["ros2_ws/src/sensor_bridge", "ros2_ws/src/survey_demo"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "sitl: needs a running PX4 SITL container",
     "unit: runs without a simulator",
     "scenario(file): the scenario file a test flies",
+    "ros: line survey with the ROS container (PX4 and ROS)",
+    "weekly: only in the weekly schedule",
 ]
 junit_family = "xunit1"
 junit_logging = "system-out"

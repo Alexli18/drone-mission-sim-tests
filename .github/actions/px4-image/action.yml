@@ -1,9 +1,17 @@
 name: PX4 image
 description: >-
-  Restore the pinned PX4 SITL image from the Actions cache, or pull it by
-  digest and cache it, then make it available under a local tag. Tests run
-  that tag with --pull never, so a missing image fails instead of pulling.
-  Needs the package installed (reads the pin from config.yaml).
+  Restore the PX4 SITL image from the Actions cache, or build it and cache it:
+  the image pinned by digest with its px4 binary rebuilt with the lockstep
+  scheduler fix (scripts/build_px4_image.sh, docker/px4-sitl/). The cache key
+  is the pinned digest plus the hash of docker/px4-sitl/. Tests run the local
+  tag with --pull never, so a missing image fails instead of pulling. Needs the
+  package installed (reads the pin from config.yaml).
+inputs:
+  lookup-only:
+    description: >-
+      "true": only make sure the cache has the image (build and cache it on a
+      miss); on a hit, neither download nor load it. For the priming job.
+    default: "false"
 runs:
   using: composite
   steps:
@@ -12,22 +20,22 @@ runs:
       run: |
         mkdir -p ~/.cache/px4-image
         digest="$(python -m framework.config digest)"
-        echo "key=px4-image-${digest#sha256:}" >> "$GITHUB_OUTPUT"
-        echo "image=$(python -m framework.config image)" >> "$GITHUB_OUTPUT"
+        echo "key=px4-image-${digest#sha256:}-${{ hashFiles('docker/px4-sitl/**') }}" >> "$GITHUB_OUTPUT"
         echo "tag=$(python -m framework.config local-tag)" >> "$GITHUB_OUTPUT"
     - id: cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.cache/px4-image/image.tar
         key: ${{ steps.pin.outputs.key }}
+        lookup-only: ${{ inputs.lookup-only }}
     - if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        docker pull "${{ steps.pin.outputs.image }}"
-        docker tag "${{ steps.pin.outputs.image }}" "${{ steps.pin.outputs.tag }}"
+        scripts/build_px4_image.sh
         docker save -o ~/.cache/px4-image/image.tar "${{ steps.pin.outputs.tag }}"
-    - if: steps.cache.outputs.cache-hit == 'true'
+    - if: steps.cache.outputs.cache-hit == 'true' && inputs.lookup-only != 'true'
       shell: bash
       run: docker load -i ~/.cache/px4-image/image.tar
-    - shell: bash
+    - if: steps.cache.outputs.cache-hit != 'true' || inputs.lookup-only != 'true'
+      shell: bash
       run: docker image inspect "${{ steps.pin.outputs.tag }}" --format 'local image {{.Id}}'
