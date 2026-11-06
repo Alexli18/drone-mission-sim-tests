@@ -1,48 +1,129 @@
 name: sim-tests
 
+# Runner minutes are the limit, so each event runs only what it needs; the `changes`
+# job decides (scripts/ci_plan.sh, docs/qa-notes.md, "CI cost control"):
+#   push to main   unit only; the pull request already ran the rest
+#   pull request   unit; the flight suites and the ROS line-survey smoke test when
+#                  their paths change; label full-ci: everything
+#   nightly        everything, but only if main had a commit in 24 hours
+#   weekly         the ROS line survey with three seeds plus the weekly-only scenarios
+#   dispatch       everything (runs=3: every suite three times)
+#   docs only      nothing (push and pull request; paths-ignore below)
 on:
   push:
     branches: [main]
+    paths-ignore:
+      # Documentation only: no test, script or image reads these (checked). The
+      # deliberate-break patches in docs/breaks/ are not listed: they are code.
+      # paths-ignore has no "!" exceptions, hence the docs/ subfolders one by one.
+      - "**/*.md"
+      - "docs/designs/**"
+      - "docs/research/**"
+      - "LICENSE*"
   pull_request:
+    # labeled: adding full-ci starts the full run (other labels start nothing).
+    types: [opened, synchronize, reopened, labeled]
+    paths-ignore: # the same list as for push
+      - "**/*.md"
+      - "docs/designs/**"
+      - "docs/research/**"
+      - "LICENSE*"
   workflow_dispatch:
     inputs:
       runs:
-        description: "Times to run every suite (3 = same as the nightly run)"
+        description: "Times to run every suite (3 = pass-rate run)"
         type: choice
         options: ["1", "3"]
         default: "1"
   schedule:
-    # Nightly: every suite 3 times, for the pass rate. Off the hour, because
-    # GitHub delays or drops scheduled runs at the top of the hour.
-    - cron: "17 3 * * *"
+    # Off the hour, because GitHub delays or drops scheduled runs at the top of
+    # the hour. Both strings are repeated in scripts/ci_plan.sh.
+    - cron: "17 2 * * *" # nightly: every suite, if main changed
+    - cron: "41 4 * * 1" # weekly: ROS line survey, three seeds and the weekly-only scenarios
+
+# A new push to a pull request cancels its older run; scheduled and dispatched
+# runs are never cancelled.
+concurrency:
+  group: sim-tests-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
 
 jobs:
+  # Which jobs this run needs (scripts/ci_plan.sh). Not on push.
+  changes:
+    if: >-
+      github.event_name != 'push'
+      && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')
+    runs-on: ubuntu-24.04
+    outputs:
+      run: ${{ steps.plan.outputs.run }}
+      sim: ${{ steps.plan.outputs.sim }}
+      ros: ${{ steps.plan.outputs.ros }}
+      full: ${{ steps.plan.outputs.full }}
+      weekly: ${{ steps.plan.outputs.weekly }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: plan
+        shell: bash # with pipefail, so a failing script is not hidden by tee
+        run: >-
+          scripts/ci_plan.sh "${{ github.event_name }}"
+          "${{ github.event.pull_request.base.sha }}" "${{ github.event.schedule }}"
+          "${{ contains(github.event.pull_request.labels.*.name, 'full-ci') }}"
+          | tee -a "$GITHUB_OUTPUT"
+
   unit:
+    needs: changes
+    # Runs on push, where `changes` is skipped; not on a quiet night or on a
+    # label other than full-ci.
+    if: >-
+      !cancelled() && needs.changes.outputs.run != 'false'
+      && (github.event.action != 'labeled' || github.event.label.name == 'full-ci')
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - run: pip install -e ".[dev]"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[dev,ros]"
       - run: ruff check .
-      - run: shellcheck scripts/*.sh
-      - run: pytest -m unit
-      # Primes the image cache once per workflow run, so sim jobs do not pull.
+      - run: shellcheck scripts/*.sh docker/ros2-survey-base/*.sh
+      # Two workers: the runner has 2 vCPUs.
+      - run: pytest -m unit -n 2
+
+  # Primes the PX4 image cache once per workflow run, so the sim and ROS jobs do
+  # not each build it on a miss. On a hit it only checks that the entry exists.
+  px4-image:
+    needs: changes
+    if: needs.changes.outputs.sim == 'true' || needs.changes.outputs.ros == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e .
       - uses: ./.github/actions/px4-image
+        with:
+          lookup-only: "true"
 
   sim:
-    needs: unit
+    needs: [unit, changes, px4-image]
+    if: needs.changes.outputs.sim == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         suite: [basic, survey, failsafes]
-        run: ${{ fromJSON((github.event_name == 'schedule' || inputs.runs == '3') && '[1,2,3]' || '[1]') }}
+        run: ${{ fromJSON(inputs.runs == '3' && '[1,2,3]' || '[1]') }}
         include:
           - suite: basic
             files: tests/test_smoke.py tests/test_basic_flight.py
@@ -51,41 +132,118 @@ jobs:
           - suite: failsafes
             files: tests/test_failsafes.py
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - run: pip install -e .
       - uses: ./.github/actions/px4-image
       - run: >-
           pytest -m sitl ${{ matrix.files }}
           --junitxml=artifacts/junit/${{ matrix.suite }}-${{ matrix.run }}.xml
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: results-${{ matrix.suite }}-${{ matrix.run }}
           path: artifacts/
           if-no-files-found: warn
       # JUnit alone, so the report job does not download telemetry and ULogs.
       - if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: junit-${{ matrix.suite }}-${{ matrix.run }}
           path: artifacts/junit/
           if-no-files-found: warn
 
-  report:
-    needs: sim
-    if: always()
+  # Builds or restores the ROS base image once per workflow run, before the ROS jobs.
+  ros-image:
+    needs: [unit, changes]
+    if: needs.changes.outputs.ros == 'true'
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
-      - uses: actions/download-artifact@v4
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e .
+      - uses: ./.github/actions/ros2-image
+        with:
+          thin: "false"
+
+  ros-survey:
+    needs: [unit, changes, px4-image, ros-image]
+    if: needs.changes.outputs.ros == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        run: ${{ fromJSON((needs.changes.outputs.weekly == 'true' || inputs.runs == '3') && '[1,2,3]' || '[1]') }}
+    env:
+      # Weekly and runs=3: the seed changes per run, so the pass rate covers noise and jitter.
+      SURVEY_SEED_OFFSET: ${{ (needs.changes.outputs.weekly == 'true' || inputs.runs == '3') && matrix.run || 0 }}
+      # Smoke test (pull request without full-ci): the main scenario alone, with its
+      # replay check.
+      SURVEY_TESTS: >-
+        ${{ needs.changes.outputs.full == 'true' && 'tests/test_line_survey.py'
+        || 'tests/test_line_survey.py::test_line_survey[line_survey_markers]' }}
+      SURVEY_MARKS: ${{ needs.changes.outputs.weekly == 'true' && 'ros' || 'ros and not weekly' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[ros]"
+      - uses: ./.github/actions/px4-image
+      - uses: ./.github/actions/ros2-image
+      # CPU diagnostics: the core count and a 1 s vmstat log over the test (results artifact).
+      - run: |
+          echo "nproc: $(nproc)"
+          mkdir -p artifacts/diagnostics
+          nproc > artifacts/diagnostics/nproc.txt
+          vmstat -t 1 > artifacts/diagnostics/vmstat.log 2>&1 &
+          echo "VMSTAT_PID=$!" >> "$GITHUB_ENV"
+      - run: >-
+          pytest "$SURVEY_TESTS" -m "$SURVEY_MARKS"
+          --junitxml=artifacts/junit/ros-survey-${{ matrix.run }}.xml
+      - if: always()
+        run: kill "$VMSTAT_PID" 2>/dev/null || true
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: results-ros-survey-${{ matrix.run }}
+          path: artifacts/
+          if-no-files-found: warn
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: junit-ros-survey-${{ matrix.run }}
+          path: artifacts/junit/
+          if-no-files-found: warn
+
+  report:
+    needs: [sim, ros-survey]
+    # Whenever at least one test job ran (any of them may be skipped); not on a
+    # unit-only run and not after a cancel.
+    if: >-
+      !cancelled()
+      && (contains(needs.*.result, 'success') || contains(needs.*.result, 'failure'))
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@v8
         with:
           pattern: junit-*
           path: artifacts/
-      # Reports only; a failed sim entry already makes the workflow red.
+      # Reports only; a failed test entry already makes the workflow red.
       - run: python scripts/summarize.py artifacts/ >> "$GITHUB_STEP_SUMMARY"

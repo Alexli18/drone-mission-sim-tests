@@ -15,7 +15,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["ruff==0.17.3"]
+# pytest-xdist: the unit job runs `pytest -m unit -n 2`.
+dev = ["ruff==0.17.3", "pytest-xdist==3.8.0"]
 # The ROS tests: the rosbridge client and the pure survey code (docs/ros-bridge.md).
 ros = ["roslibpy==1.7.0", "numpy==1.26.4"]
 
