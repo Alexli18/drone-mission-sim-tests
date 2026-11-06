@@ -73,6 +73,66 @@ async def call(coro, cfg, description):
         raise FlightAssertionError(description, f"no reply within {timeout_s} s") from None
 
 
+def latlon_to_offset(home_lat, home_lon, lat, lon) -> tuple[float, float]:
+    """Flat-earth (north_m, east_m) from home; inverse of ``mission.offset_to_latlon``."""
+    north = math.radians(lat - home_lat) * EARTH_RADIUS_M
+    east = math.radians(lon - home_lon) * EARTH_RADIUS_M * math.cos(math.radians(home_lat))
+    return north, east
+
+
+def _line_track(recorder, line, home_lat, home_lon) -> list[tuple[float, float, float]]:
+    """(sim_s, s, d) of every recorded position with a simulated time.
+
+    ``line`` is any object with ``project(north_m, east_m)`` and ``length_m``
+    (``mission.SurveyLine``; this module must not import ``framework.mission``).
+    """
+    track = []
+    for sim_t, lat, lon, _ in recorder.positions():
+        if sim_t is None:
+            continue
+        s, d = line.project(*latlon_to_offset(home_lat, home_lon, lat, lon))
+        track.append((sim_t, s, d))
+    return track
+
+
+def _line_samples(recorder, line, home_lat, home_lon) -> list[tuple[float, float, float]]:
+    """The (sim_s, s, d) samples from the first with s >= 0 to the last with s <= L."""
+    track = _line_track(recorder, line, home_lat, home_lon)
+    first = next((i for i, (_, s, _) in enumerate(track) if s >= 0), None)
+    last = next((i for i in range(len(track) - 1, -1, -1) if track[i][1] <= line.length_m),
+                None)
+    if first is None or last is None or last <= first:
+        raise FlightAssertionError(f"positions from s = 0 to s = {line.length_m} m on the line",
+                                   f"no such window in {len(track)} samples", recorder)
+    return track[first:last + 1]
+
+
+def line_window(recorder, line, home_lat, home_lon) -> tuple[float, float]:
+    """Simulated times of the first position with s >= 0 and the last with s <= L."""
+    samples = _line_samples(recorder, line, home_lat, home_lon)
+    return samples[0][0], samples[-1][0]
+
+
+def assert_cross_track(recorder, line, home_lat, home_lon, tol_m) -> float:
+    """Max |d| over the line window is within ``tol_m``; returns it."""
+    samples = _line_samples(recorder, line, home_lat, home_lon)
+    worst = max(abs(d) for _, _, d in samples)
+    if worst > tol_m:
+        raise FlightAssertionError(f"cross-track within ± {tol_m} m over the line",
+                                   f"max {worst:.2f} m over {len(samples)} samples", recorder)
+    return worst
+
+
+def line_speed(recorder, line, home_lat, home_lon) -> float:
+    """Mean speed along the line over its window, m/s in simulated time."""
+    samples = _line_samples(recorder, line, home_lat, home_lon)
+    (t_in, s_in, _), (t_out, s_out, _) = samples[0], samples[-1]
+    if t_out <= t_in:
+        raise FlightAssertionError("line window longer than zero simulated seconds",
+                                   f"from {t_in} s to {t_out} s", recorder)
+    return (s_out - s_in) / (t_out - t_in)
+
+
 def horizontal_distance_m(lat1, lon1, lat2, lon2) -> float:
     """Equirectangular distance; error below 0.1 m within 200 m of home."""
     mean_lat = math.radians((lat1 + lat2) / 2)

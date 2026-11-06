@@ -9,7 +9,9 @@ from framework.mission import (
     SCENARIOS_DIR,
     Area,
     ScenarioError,
+    SurveyLine,
     lawnmower_waypoints,
+    line_waypoints,
     list_scenarios,
     load_scenario,
     offset_to_latlon,
@@ -154,3 +156,102 @@ def test_geofence_only_for_geofence_breach(tmp_path):
     data = dict(FAILSAFE, geofence={"inclusion_polygon": [[-1, -1], [1, -1], [1, 1]]})
     with pytest.raises(ScenarioError, match="only allowed for failure.kind geofence_breach"):
         load_scenario(write(tmp_path, data))
+
+
+NORTH_LINE = SurveyLine(start_north_m=5, start_east_m=0, heading_deg=0, length_m=20)
+EAST_LINE = SurveyLine(start_north_m=0, start_east_m=10, heading_deg=90, length_m=20)
+
+
+def test_survey_line_project_heading_north():
+    s, d = NORTH_LINE.project(15, 2)
+    assert s == pytest.approx(10) and d == pytest.approx(2)  # east is right of north
+
+
+def test_survey_line_project_heading_east():
+    s, d = EAST_LINE.project(-3, 14)
+    assert s == pytest.approx(4) and d == pytest.approx(3)  # south is right of east
+
+
+@pytest.mark.parametrize("line", [NORTH_LINE, EAST_LINE,
+                                  SurveyLine(-4, 7, heading_deg=217.5, length_m=12)])
+def test_survey_line_point_inverts_project(line):
+    for s, d in [(0, 0), (6.5, -1.2), (line.length_m, 0.3), (-2, 4)]:
+        assert line.project(*line.point(s, d)) == pytest.approx((s, d))
+
+
+def test_line_waypoints_are_run_in_start_end_run_out():
+    points = line_waypoints(NORTH_LINE, 2.0)
+    assert points == [pytest.approx(p) for p in [(3, 0), (5, 0), (25, 0), (27, 0)]]
+    assert [EAST_LINE.project(*p)[0] for p in line_waypoints(EAST_LINE, 1.5)] == [
+        pytest.approx(s) for s in (-1.5, 0, 20, 21.5)]
+
+
+# line_survey scenarios
+
+SURVEY = {
+    "name": "ls", "type": "line_survey", "description": "d",
+    "line": {"start_north_m": 5.0, "start_east_m": 0.0, "heading_deg": 0.0, "length_m": 12.0},
+    "sensor_height_m": 0.4, "speed_m_s": 1.0,
+    "markers": [{"s_m": 3.0}, {"s_m": 8.0, "d_m": 0.1, "amplitude": 0.5}],
+}
+
+
+def test_line_survey_defaults_and_vehicle_height(tmp_path):
+    scenario = load_scenario(write(tmp_path, SURVEY))
+    survey = scenario.survey
+    assert survey.line == SurveyLine(5.0, 0.0, 0.0, 12.0)
+    assert [(m.s_m, m.d_m, m.amplitude) for m in survey.markers] == [(3.0, 0.0, 0.8),
+                                                                      (8.0, 0.1, 0.5)]
+    assert (survey.clock.offset_ms, survey.seed, survey.schedule, survey.replay_check) == (
+        0.0, 0, "push", False)
+    assert scenario.speed_m_s == 1.0 and scenario.px4_params == load_baseline_params()
+
+
+def test_vehicle_height_is_sensor_height_plus_the_offset_below_the_vehicle(tmp_path):
+    data = dict(SURVEY, sensor_offset_m={"x": 0.1, "y": 0.0, "z": 0.2})
+    assert load_scenario(write(tmp_path, data)).altitude_m == pytest.approx(0.6)
+
+
+def test_profile_sits_between_the_baseline_and_the_scenario(tmp_path, monkeypatch):
+    from framework import mission
+
+    (tmp_path / "_tuned.yaml").write_text(yaml.safe_dump(
+        {"px4_params": {"MPC_XY_CRUISE": 2, "EKF2_TAU_POS": 0.1}}))
+    monkeypatch.setattr(mission, "SCENARIOS_DIR", tmp_path)
+    data = dict(SURVEY, profile="tuned", px4_params={"EKF2_TAU_POS": 0.2})
+    params = load_scenario(write(tmp_path, data)).px4_params
+    assert params["MPC_XY_CRUISE"] == 2            # the profile beats the baseline (5)
+    assert params["EKF2_TAU_POS"] == 0.2           # the scenario beats the profile
+    assert params["COM_FAIL_ACT_T"] == 5           # the baseline is still there
+
+
+def test_low_altitude_profile_is_marked_simulation_only():
+    text = (SCENARIOS_DIR / "_low_altitude.yaml").read_text()
+    assert "EKF2_IMU_CTRL" in text and "SIMULATION ONLY" in text
+    assert load_baseline_params().get("EKF2_IMU_CTRL") is None   # never in the shared baseline
+
+
+@pytest.mark.parametrize("change, named", [
+    ({"profile": "missing"}, "profile"),
+    ({"profile": "not valid"}, "profile"),
+    ({"px4_params": {"UXRCE_DDS_DOM_ID": 42}}, "UXRCE_DDS_DOM_ID"),
+    ({"surprise": 1}, "unknown key: surprise"),
+    ({"line": {"start_north_m": 5.0, "heading_deg": 0.0, "length_m": 12.0}}, "line"),
+    ({"clock": {"offset_ms": 0.0, "jitter_ms": -1.0}}, "clock.jitter_ms"),
+    ({"sensor_height_m": 0}, "sensor_height_m"),
+    ({"seed": -1}, "seed"),
+    ({"schedule": "nightly"}, "schedule"),
+    ({"replay_check": "yes"}, "replay_check"),
+    ({"markers": {"s_m": 3}}, "markers"),
+    ({"markers": [{"d_m": 0.1}]}, r"markers\[0\]"),
+    ({"markers": [{"s_m": 13.0}]}, r"markers\[0\].s_m"),
+    ({"markers": [{"s_m": 3.0, "amplitude": 1.5}]}, "amplitude"),
+    ({"sensor_offset_m": {"x": 0.1}}, "sensor_offset_m"),
+])
+def test_line_survey_checks_name_the_key(tmp_path, change, named):
+    with pytest.raises(ScenarioError, match=named):
+        load_scenario(write(tmp_path, dict(SURVEY, **change)))
+
+
+def test_a_line_without_markers_is_valid(tmp_path):
+    assert load_scenario(write(tmp_path, dict(SURVEY, markers=[]))).survey.markers == ()

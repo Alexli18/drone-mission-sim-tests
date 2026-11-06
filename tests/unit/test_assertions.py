@@ -1,11 +1,22 @@
-"""Unit tests for the failsafe pass rule (no simulator), including CUJ 3."""
+"""Unit tests for the failsafe pass rule (no simulator), including CUJ 3, and the line
+helpers."""
 
+import math
 from types import SimpleNamespace
 
 import pytest
 
-from framework.assertions import FlightAssertionError, Moment, Reference, failsafe_verdict
-from framework.mission import Expected
+from framework.assertions import (
+    FlightAssertionError,
+    Moment,
+    Reference,
+    assert_cross_track,
+    failsafe_verdict,
+    latlon_to_offset,
+    line_speed,
+    line_window,
+)
+from framework.mission import Expected, SurveyLine, offset_to_latlon
 
 pytestmark = pytest.mark.unit
 
@@ -107,3 +118,64 @@ def test_offboard_flow_uses_offboard_as_active_mode():
     rec = FakeRecorder([(110, "OFFBOARD"), (130, "HOLD"), (135, "RETURN_TO_LAUNCH")], **LANDED)
     ref = Reference(start=TRIGGER, trigger=TRIGGER)
     assert failsafe_verdict(rec, expect(), ref, "OFFBOARD")
+
+
+HOME_LAT, HOME_LON = 47.397742, 8.545594
+
+
+def test_latlon_to_offset_inverts_offset_to_latlon_within_0_1_m():
+    for north, east in [(0, 0), (5, 0), (50, 70), (-20, 130), (110, -110)]:
+        lat, lon = offset_to_latlon(HOME_LAT, HOME_LON, north, east)
+        back = latlon_to_offset(HOME_LAT, HOME_LON, lat, lon)
+        assert math.dist(back, (north, east)) < 0.1
+
+
+class TrackRecorder(FakeRecorder):
+    """Positions as (sim_s, lat, lon, relative altitude) from (sim_s, north, east) offsets."""
+
+    def __init__(self, track):
+        super().__init__([])
+        self._positions = [(t, *offset_to_latlon(HOME_LAT, HOME_LON, n, e), 0.4)
+                           for t, n, e in track]
+
+    def positions(self):
+        return self._positions
+
+
+LINE = SurveyLine(start_north_m=5, start_east_m=0, heading_deg=0, length_m=20)
+
+
+def synthetic_track():
+    """Hover at home, fly north at 0.5 m/s from s = -1.75 m to s = 22.25 m, weaving by 0.1 m.
+
+    No sample lies on s = 0 or s = L, where the lat/lon round trip could put it either side.
+    """
+    track = [(None, 0.0, 0.0), (1.0, 0.0, 0.0)]  # the first sample has no simulated time yet
+    for i in range(49):
+        t = 10.0 + i
+        track.append((t, 3.25 + 0.5 * i, 0.1 * math.sin(i)))
+    return track
+
+
+def test_line_window_is_first_sample_at_s0_to_last_at_length():
+    t_in, t_out = line_window(TrackRecorder(synthetic_track()), LINE, HOME_LAT, HOME_LON)
+    assert (t_in, t_out) == (14.0, 53.0)  # north 5.25 m and 24.75 m
+
+
+def test_assert_cross_track_returns_max_and_fails_beyond_tolerance():
+    rec = TrackRecorder(synthetic_track())
+    worst = assert_cross_track(rec, LINE, HOME_LAT, HOME_LON, 0.3)
+    assert worst == pytest.approx(0.1, abs=0.01)
+    with pytest.raises(FlightAssertionError, match="cross-track within ± 0.05 m"):
+        assert_cross_track(rec, LINE, HOME_LAT, HOME_LON, 0.05)
+
+
+def test_line_speed_in_simulated_time():
+    speed = line_speed(TrackRecorder(synthetic_track()), LINE, HOME_LAT, HOME_LON)
+    assert speed == pytest.approx(0.5, abs=0.01)
+
+
+def test_line_window_without_the_line_fails():
+    rec = TrackRecorder([(1.0, 0.0, 0.0), (2.0, 1.0, 0.0)])
+    with pytest.raises(FlightAssertionError, match="no such window"):
+        line_window(rec, LINE, HOME_LAT, HOME_LON)
