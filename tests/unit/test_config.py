@@ -51,7 +51,7 @@ def test_cli_prints_pin(command):
 
 def test_local_tag_is_derived_from_digest():
     cfg = load_config()
-    assert cfg.px4.local_tag == "px4-sitl-pinned:" + cfg.px4.digest.removeprefix("sha256:")[:12]
+    assert cfg.px4.local_tag == "px4-sitl-patched:" + cfg.px4.digest.removeprefix("sha256:")[:12]
 
 
 def test_baseline_params_load():

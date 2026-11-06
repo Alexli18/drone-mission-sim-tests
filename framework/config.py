@@ -43,7 +43,9 @@ class Px4Config:
 
     @property
     def local_tag(self) -> str:
-        return f"px4-sitl-pinned:{self.digest.split(':', 1)[1][:12]}"
+        # The image the tests run: the pinned image with PX4's lockstep fix
+        # (scripts/build_px4_image.sh, docker/px4-sitl/).
+        return f"px4-sitl-patched:{self.digest.split(':', 1)[1][:12]}"
 
 
 @dataclass(frozen=True)
