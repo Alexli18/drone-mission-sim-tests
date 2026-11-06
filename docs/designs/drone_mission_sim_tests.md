@@ -33,8 +33,8 @@ The framework:
 
 Work is split into the PRD's milestones: **M1** SITL boots in CI, **M2** basic
 flight, **M3** scenario-driven survey mission, **M4** failure injection and
-failsafes, **M5** reports and quality gate. **M6** (ROS 2 sensor bridge) is out
-of scope for this design.
+failsafes, **M5** reports and quality gate. A later extension (a ROS 2 line survey,
+`docs/line-survey.md`) is out of scope for this design.
 
 The project is a portfolio piece. Its readers are hiring managers and engineers
 who will open the repository, read the README, and look at the CI history. The
@@ -124,9 +124,9 @@ tracking of how often each test passes, built only on free infrastructure.
 *   **Multi-vehicle missions.** One vehicle per test.
 *   **First-class local support on macOS (Apple Silicon).** Local runs are
     best-effort and documented as such. CI on Ubuntu is the source of truth.
-*   **ROS 2 / uXRCE-DDS sensor pipeline (PRD milestone M6).** Not part of this
-    design. It is listed under Future Improvements and gets its own design
-    once M1–M5 are stable.
+*   **ROS 2 / uXRCE-DDS sensor pipeline (the PRD's optional extension).** Not
+    part of this design. It was added after M1–M5 were stable and is described
+    in `docs/line-survey.md`.
 
 ## Open Questions
 
@@ -1001,11 +1001,11 @@ MAVSDK failure injections during the failsafe survey. None became a scenario:
 
 ## Future Improvements
 
-*   **ROS 2 sensor bridge (PRD M6)**: A ROS 2 node, connected over uXRCE-DDS,
-    reads vehicle position during the survey mission and publishes a "sensor
-    reading" at each survey point from a small committed gprMax GPR dataset. A
-    stub detector consumes the readings, and a test checks that the buried
-    target is flagged near its true position.
+*   **ROS 2 sensor bridge (the PRD's optional extension)**: done, see
+    `docs/line-survey.md`. A ROS 2 node, connected over uXRCE-DDS, reads the
+    vehicle position during a survey line and publishes timestamped captures of
+    a toy sensor; a georeferencing node and a marker detector consume them, and a
+    test checks that every painted marker is found near its true position.
 *   **Move to PX4 v1.18.0 stable** when it is released: change the image
     reference and digest in `config.yaml`, run the full suite, and update the
     README.

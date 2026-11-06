@@ -1,6 +1,6 @@
 name: survey_corridor
 type: mission
-description: Corridor survey (e.g. along a road or pipeline), 20 x 100 m, 10 m line spacing, 20 m altitude, 8 m/s.
+description: Corridor survey (e.g. along a power line or a river), 20 x 100 m, 10 m line spacing, 20 m altitude, 8 m/s.
 altitude_m: 20
 speed_m_s: 8
 area: {origin_north_m: 10, origin_east_m: 0, width_m: 20, height_m: 100, line_spacing_m: 10}
