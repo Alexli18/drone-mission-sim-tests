@@ -5,9 +5,51 @@ px4:
   digest: sha256:39d5a950208a5a45fccbbb0670bd8716663ed0b350ef738447581395e0c92d97
   model: sihsim_quadx
   speed_factor: 10
+  speed_factor_ros: 4            # ROS runs: PX4 plus the ROS stack overload a 2-vCPU runner at 10 (docs/qa-notes.md, "CPU saturation")
   home: {lat: 47.397742, lon: 8.545594, alt: 488.0}   # passed to PX4 as PX4_HOME_*; same as PX4's default SITL home
 mavlink:
   api_url: udpin://0.0.0.0:14540
+ros:                           # the ROS container (docs/ros-bridge.md)
+  base_image_tag: survey-ros-base:local
+  image_tag: survey-ros:local
+  dds_agent_port: 8888
+  rosbridge_port: 9090
+  rosbridge_address: 127.0.0.1   # rosbridge only; the DDS agent has no bind option
+  localhost_only: false          # MicroXRCEAgent ignores ROS_LOCALHOST_ONLY; with true no /fmu topics are discovered
+  domain_id: 42                  # ROS_DOMAIN_ID, passed to the PX4 container as well
+  pose_topic: /fmu/out/vehicle_local_position_v1   # versioned name in PX4 v1.18.0-rc1
+  home_topic: /fmu/out/home_position_v1   # ground reference z0: best effort, transient local
+survey:                        # the line-survey test (docs/line-survey.md)
+  sensor:
+    capture_rate_hz: 20.0      # simulated time
+    samples_per_capture: 4
+    sample_spacing_s: 0.01
+    footprint_sigma_m: 0.2
+    noise: 0.02
+    max_pose_gap_s: 0.5        # wider than the georeferencing node's, so the sensor never loses a sample the node could place
+  georeference:
+    off_line_m: 0.5
+    height_band_m: 0.15
+    hold_timeout_s: 0.5        # simulated time
+    wall_fallback_s: 2.0
+    max_pose_gap_s: 0.2
+    coverage_gap_factor: 1.5
+  detector:
+    threshold: 0.3
+    min_captures: 3
+    max_gap_factor: 3.0
+  pass_rule:
+    position_tol_m: 0.10
+    coverage_min: 0.95
+    coverage_agreement: 0.01
+    flight_height_m: 0.15
+    cross_track_m: 0.3
+    speed_tolerance: 0.10
+    clock_shift_m: 0.01
+    replay_s_m: 0.01
+    acceptance_radius_m: 0.5
+    run_m: 2.0
+    sensor_lag_max_s: 5.0      # simulated seconds the sensor may trail the newest pose
 telemetry_wall_hz:             # target wall-clock rates (divided by speed_factor for PX4)
   position: 50
   other: 10
@@ -23,6 +65,12 @@ timeouts_wall_s:               # guards against hangs; boot values from spike S2
   land: 120
   mission: 300
   failsafe: 180
+  ros_start: 60                # until "SURVEY READY" and the rosbridge port
+  rosbridge_connect: 30
+  first_dds_position: 30       # until /survey/status pose_received
+  sensor_drain: 30             # after /survey/stop until the last capture is in and released
+  finalize: 60                 # the /markers/finalize call
+  replay: 120                  # until "SURVEY REPLAY DONE"
 tolerances:
   altitude_m: 1.0
   waypoint_m: 3.0

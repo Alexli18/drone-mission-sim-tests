@@ -1,0 +1,49 @@
+name: ROS 2 image
+description: >-
+  Restore the ROS base image from the Actions cache, or build it and cache
+  it, then build the thin image on top (input thin). The cache key is the hash
+  of docker/ros2-survey-base/, which holds every pin, so only a pin change rebuilds
+  px4_msgs. Tests run the tags with --pull never. Needs the package installed
+  (reads the tags from config.yaml).
+inputs:
+  thin:
+    description: Also build the thin image (docker/ros2-survey/) on top of the base
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - id: tags
+      shell: bash
+      run: |
+        mkdir -p ~/.cache/ros2-image
+        echo "base=$(python -m framework.config ros-base-tag)" >> "$GITHUB_OUTPUT"
+        echo "thin=$(python -m framework.config ros-tag)" >> "$GITHUB_OUTPUT"
+    - id: cache
+      uses: actions/cache@v6
+      with:
+        path: ~/.cache/ros2-image/base.tar
+        key: ros2-survey-base-${{ hashFiles('docker/ros2-survey-base/**') }}
+    - if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        scripts/build_ros2_images.sh base
+        docker save -o ~/.cache/ros2-image/base.tar "${{ steps.tags.outputs.base }}"
+    - if: steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        start=$SECONDS
+        docker load -i ~/.cache/ros2-image/base.tar
+        # The log shows the cache restore time.
+        echo "loaded ${{ steps.tags.outputs.base }} in $((SECONDS - start)) s"
+    # The thin layer is not cached: code changes never rebuild px4_msgs and
+    # never add a large cache entry. Its build time is the script's "built ... in
+    # N s" line.
+    - if: inputs.thin == 'true'
+      shell: bash
+      run: scripts/build_ros2_images.sh thin
+    - shell: bash
+      run: |
+        docker image inspect "${{ steps.tags.outputs.base }}" --format 'local image {{.Id}} {{.Size}} bytes'
+        if [[ "${{ inputs.thin }}" == true ]]; then
+          docker image inspect "${{ steps.tags.outputs.thin }}" --format 'local image {{.Id}} {{.Size}} bytes'
+        fi

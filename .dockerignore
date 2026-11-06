@@ -1,0 +1,8 @@
+# Build context of docker/ros2-survey (the repository root).
+artifacts/
+.git/
+spikes/
+**/__pycache__/
+.pytest_cache/
+.ruff_cache/
+.venv/
