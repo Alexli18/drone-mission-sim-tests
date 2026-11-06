@@ -1,0 +1,25 @@
+Deliberate break: the georeferencing uses the nearest pose instead of interpolating
+between the two that bracket the sample time (ros2_ws/src/sensor_bridge/.../georeference.py).
+
+Expected: the unit tests go red: the interpolation and clock-offset tests of
+tests/unit/test_georeference.py (samples off by up to speed x 10 ms = 1 cm against a
+1 mm tolerance), and the per-sample position tests. The flight test is not expected to
+catch it: with 50 Hz poses the nearest-pose error is uniform within +-10 ms x speed, so
+its mean (the clock-shift rule) stays near 0 and the marker error (at most 1 cm) is far
+inside the 10 cm tolerance. That is why the unit layer exists.
+
+diff --git a/ros2_ws/src/sensor_bridge/sensor_bridge/georeference.py b/ros2_ws/src/sensor_bridge/sensor_bridge/georeference.py
+index c1e66f3..6176afd 100644
+--- a/ros2_ws/src/sensor_bridge/sensor_bridge/georeference.py
++++ b/ros2_ws/src/sensor_bridge/sensor_bridge/georeference.py
+@@ -97,8 +97,8 @@ def georeference(raw, history, line, cfg: GeorefParams, ground_z: float = 0.0):
+             continue
+         for p in pair:
+             used[p.t_us] = p
+-        north, east, h = sensor_position(interpolate_pair(pair[0], pair[1], t), offset,
+-                                       ground_z)
++        nearest = min(pair, key=lambda p: abs(p.t_us - t))  # DELIBERATE BREAK
++        north, east, h = sensor_position(nearest, offset, ground_z)
+         cs[k], cd[k] = line.project(north, east)
+         ch[k] = h
+         has_pose[k] = True

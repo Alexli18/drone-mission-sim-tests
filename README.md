@@ -11,6 +11,13 @@ scenarios as data, failure injection, and CI quality gates.
 
 **Status: milestones M1–M5 done.** This README claims only what CI shows. See the [design](docs/designs/drone_mission_sim_tests.md).
 
+**Extension, in review: a ROS 2 line survey.** A second suite flies a low survey line with a
+toy sensor on a ROS 2 pipeline fed by PX4 over uXRCE-DDS and checks the result end to end,
+plus the QA practice around it (a PX4 crash root-caused and patched, deliberate-break checks,
+CI cost control). It is described in the sections [ROS 2 line survey](#ros-2-line-survey-extension)
+and [Testing practice](#testing-practice); nothing in those sections is in the CI evidence table
+above until CI has run it.
+
 ## What CI verifies today
 
 | Check | Evidence |
@@ -18,7 +25,7 @@ scenarios as data, failure injection, and CI quality gates.
 | PX4 SITL boots headless in a pinned container and reaches "connected, GPS fix, home set" | `tests/test_smoke.py`, [run 41708569365](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41708569365): boot to ready 2.2 s |
 | Every baseline PX4 parameter is read back after boot with the value the test set | `assert_params` in the same run |
 | The simulation runs at least half the requested ×10 speed | same run: effective speed factor 8.7 |
-| The PX4 image comes from the Actions cache, not Docker Hub, in the test jobs | same run: `Loaded image: px4-sitl-pinned:39d5a950208a` |
+| The PX4 image comes from the Actions cache, not Docker Hub, in the test jobs | same run: `Loaded image: px4-sitl-pinned:39d5a950208a` (at the time; the local tag is now `px4-sitl-patched`, see [Testing practice](#testing-practice)) |
 | Basic flight: arm, take off to 10 m, hover 10 simulated seconds within ±1 m, land, disarm, with no mode other than Ready/Takeoff/Hold/Land | `tests/test_basic_flight.py`, green on 5 consecutive manual runs with no retries: [1](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710667007), [2](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710677497), [3](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710688146), [4](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710698804), [5](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710708798); max hover altitude error 0.37–0.68 m |
 | Survey mission from YAML: a 60 × 40 m lawnmower pattern (14 waypoints) is generated, uploaded and flown; every waypoint is passed within 3 m and the mission duration is inside its bounds | `tests/test_survey_mission.py` (parametrized over all `mission` scenarios), [run 41713216856](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41713216856): largest waypoint miss 1.05 m, duration 138.0 simulated s (bounds 113–242 s) |
 | GPS loss 60 simulated s into a 100 × 100 m survey (MAVSDK failure injection): the vehicle leaves Mission, lands and disarms | `test_failsafe[gps_loss]`, [run 41719048626](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41719048626): Land 5.6 s after the fault |
@@ -53,11 +60,75 @@ flowchart LR
     OUT --> ART["CI artifacts"]
 ```
 
+## ROS 2 line survey (extension)
+
+The same framework, extended to a drone with a payload: PX4 SIH flies a 12 m line 0.4 m above the
+ground; a toy sensor in a ROS 2 Humble container takes timestamped captures over three painted
+ground markers; a georeferencing node places each capture on the line from PX4's pose (received
+over uXRCE-DDS), decides whether it is usable (`ok`, `outside_line`, `off_line`, `off_height`,
+`no_pose`, `saturated`) and a detector finds the markers. The test talks to ROS over rosbridge
+only.
+
+```mermaid
+flowchart LR
+    PT["pytest + framework/"] -- MAVSDK --> PX4["PX4 SIH (patched image)"]
+    PX4 -- "uXRCE-DDS" --> ROS["ROS 2 container:<br/>toy sensor, georeferencing,<br/>marker detector, bag recorder"]
+    PT -- "rosbridge websocket" --> ROS
+```
+
+What the end-to-end test checks (details in [docs/line-survey.md](docs/line-survey.md)):
+
+*   coverage of the line by usable captures is at least 95 %, measured from the sensor's own
+    positions, and the georeferencing node's own figure agrees within 1 %;
+*   every painted marker is found within 10 cm, and no marker where none is painted;
+*   the flight holds height (+-15 cm), cross-track (30 cm) and speed (10 %);
+*   with the sensor clock 20 ms ahead or behind PX4's, every georeferenced position shifts by
+    speed x offset (within 1 cm);
+*   replaying the recorded bag into fresh nodes gives the same usable/unusable decisions from
+    takeoff on and the same markers;
+*   the sensor never falls more than 5 simulated seconds behind the poses;
+*   the nodes under test subscribe to no simulation-only topic.
+
+Also in this extension: the low-altitude PX4 parameter profile with its findings and a
+true-versus-estimated cross-track check from the ULog ([QA notes](docs/qa-notes.md#low-altitude-line-following)),
+the bridge setup and its gotchas ([docs/ros-bridge.md](docs/ros-bridge.md)), about 160 new unit tests
+(georeferencing, the toy sensor and detector, the rosbridge client against a fake websocket
+server, replay helpers, the CI planner), and four scenarios (`scenarios/line_survey_*.yaml`).
+
+## Testing practice
+
+[docs/qa-notes.md](docs/qa-notes.md) is the running list of what broke and how it is guarded:
+
+*   **A flaky crash with a root cause upstream.** PX4 v1.18.0-rc1 aborted in its lockstep scheduler
+    (a glibc assertion, PX4 issue 29060). The tests now run a PX4 image rebuilt with the upstream
+    fix (`docker/px4-sitl/`, `scripts/build_px4_image.sh`), cached in CI by digest and directory hash.
+*   **Flakes found and root-caused:** the DDS gotchas, pose loss from a small QoS queue, CPU
+    saturation of a 2-vCPU runner (a lower speed factor for the ROS suite), a sensor node falling
+    behind (a lag guard), a replay race on subscriber connect, a reactor-thread bug in the rosbridge
+    client and a race in the unit test's own fake server found under `pytest -n 2`.
+*   **Measuring the truth, not only the estimate.** `spikes/line_hold_truth.py` projects the
+    simulator's ground truth from the ULog on the line and compares it with what PX4 estimates, which
+    is what the test sees.
+*   **Deliberate breaks.** `docs/breaks/*.patch` each break one thing the suite guards;
+    `scripts/check_breaks.sh` proves the unit tests go red for every one.
+*   **CI cost control.** Unit-only on push to `main`, path filters per suite, a `full-ci` label,
+    docs-only changes ignored, a nightly run only if `main` changed, a weekly multi-seed pass-rate
+    run, cancelled superseded pull-request runs, cached images and pip, `pytest-xdist`.
+
+Local evidence for the extension (Apple Silicon Mac, Docker Desktop, PX4 speed factor 4, effective 1.9; **not CI
+evidence**): the four `line_survey_*` scenarios passed in 3 of 3 repeats with different noise seeds, each in 23 s
+(47 s with the replay check); coverage 1.0 from both nodes, markers found 3 of 3 with errors up to 7 cm and no false
+marker (none on the clean line), height error 0.06 to 0.08 m, cross-track 0.17 to 0.25 m, line speed 0.97 to 0.99 m/s,
+clock shift +0.0195 m and -0.0195 m for +20 and -20 ms, sensor lag at most 0.07 s. With the lever-arm break applied the
+flight test fails with the markers 12 cm off (`docs/breaks/`). The earlier suites still pass locally (10 passed, the
+iptables-based `link_loss` skipped as documented).
+
 ## Pinned versions
 
 | Component | Pin |
 |---|---|
-| PX4 SITL image | `px4io/px4-sitl:v1.18.0-rc1@sha256:39d5a950…` (release candidate; see limitations) |
+| PX4 SITL image | `px4io/px4-sitl:v1.18.0-rc1@sha256:39d5a950…` (release candidate; see limitations), with its `px4` binary rebuilt from the same source plus the upstream lockstep fix (`px4-sitl-patched:39d5a950208a`) |
+| ROS (extension) | `ros:humble-ros-base` by digest, Micro XRCE-DDS Agent v2.4.3 by commit, `px4_msgs` by commit, `rosbridge_server`; `roslibpy==1.7.0` in the tests |
 | Vehicle | `sihsim_quadx` |
 | MAVSDK-Python | `mavsdk-grpc==4.0.5` |
 | Python | 3.11 |
@@ -67,28 +138,40 @@ All pins live in `config.yaml` and `pyproject.toml`.
 
 ## Running
 
-**In CI:** every push to `main` and every pull request runs the `sim-tests`
-workflow (unit job, then one simulator job per suite, then a report job). It
-can also be started by hand from the Actions tab. A nightly schedule (03:17
-UTC) runs every suite 3 times, and the report adds a pass rate per test. GitHub
-skipped the first scheduled run, so the 3× evidence above comes from the same
-matrix started by hand (`gh workflow run sim-tests.yml -f runs=3`).
+**In CI:** the `sim-tests` workflow decides per event what to run (`scripts/ci_plan.sh`): a push
+to `main` runs the unit job only; a pull request runs the unit job and the suites whose paths it
+changes (all of them with the `full-ci` label); documentation-only changes run nothing; a nightly
+schedule runs every suite only if `main` changed in the last 24 hours, and a weekly one runs the
+ROS survey three times with different seeds. It can also be started by hand from the Actions tab
+(`gh workflow run sim-tests.yml -f runs=3` runs every suite 3 times, as the pass-rate evidence
+above did). The report job writes the results table. See
+[CI cost control](docs/qa-notes.md#ci-cost-control).
 
 **Locally (Linux, Docker, Python 3.11; `link_loss` needs `sudo iptables`):**
 
 ```sh
-pip install -e ".[dev]"
-docker pull "$(python -m framework.config image)"
-docker tag "$(python -m framework.config image)" "$(python -m framework.config local-tag)"
+pip install -e ".[dev,ros]"
+scripts/build_px4_image.sh        # pulls the pinned image and rebuilds px4 with the lockstep fix
 pytest -m unit
-pytest -m sitl
+pytest -m sitl tests/test_smoke.py tests/test_basic_flight.py tests/test_survey_mission.py tests/test_failsafes.py
 ```
+
+The ROS line survey additionally needs the two ROS images (the base image takes a while to build once):
+
+```sh
+scripts/build_ros2_images.sh base && scripts/build_ros2_images.sh thin
+pytest tests/test_line_survey.py -k line_survey_markers
+```
+
+`scripts/check_breaks.sh` applies each deliberate-break patch to a clean copy and requires the unit
+tests to fail.
 
 **Locally on macOS (Docker Desktop, Apple Silicon):** the same commands work;
 the image runs natively on arm64 and its entrypoint routes MAVLink to the Mac.
 SIH reaches only about half the requested speed there (×3.7 of ×10; ×8.7 on
 the CI runner). The flight tests still pass; the smoke test's speed-floor check
-is enforced only in CI and reported as a warning locally. Timing numbers in
+is enforced only in CI and reported as a warning locally. The ROS suite on a Mac needs the
+`--dds-own-ip` workaround (applied automatically; see [docs/ros-bridge.md](docs/ros-bridge.md)). Timing numbers in
 this README come from CI, which is the source of truth.
 
 ## Adding a scenario
@@ -158,3 +241,10 @@ not scenarios.
     from home in CI runs 41719048626 and 41819419053.
 *   GitHub disables scheduled workflows after 60 days without repository
     activity (this stops the nightly runs).
+*   The extension runs PX4 with simulation-only settings (`EKF2_IMU_CTRL 0`,
+    `UXRCE_DDS_SYNCT 0`); a real vehicle needs the IMU bias states and DDS time
+    synchronization. The toy sensor reads PX4's position *estimate*, so the end-to-end
+    test checks the data path, not the estimator; the estimator is measured against
+    ground truth by a separate spike.
+*   The patched PX4 image is a stopgap until the pinned PX4 release contains the
+    upstream fix; building it compiles PX4 and is slow on a cache miss.

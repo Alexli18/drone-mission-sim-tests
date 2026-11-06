@@ -1,0 +1,21 @@
+Deliberate break: the georeferencing ignores the sensor's body-frame offset (the lever
+arm of 15 cm in the flight scenarios), ros2_ws/src/sensor_bridge/.../georeference.py.
+
+Expected: the unit tests go red: the offset tests of tests/unit/test_georeference.py and the
+in-process chain tests of tests/unit/test_markers.py (every marker 15 cm off against a
+10 cm tolerance). The flight scenarios use the same offset, so the flight test fails too
+(marker rule), but the unit layer says so in a second instead of a minute of simulation.
+
+diff --git a/ros2_ws/src/sensor_bridge/sensor_bridge/georeference.py b/ros2_ws/src/sensor_bridge/sensor_bridge/georeference.py
+index c1e66f3..442b072 100644
+--- a/ros2_ws/src/sensor_bridge/sensor_bridge/georeference.py
++++ b/ros2_ws/src/sensor_bridge/sensor_bridge/georeference.py
+@@ -85,7 +85,7 @@ def georeference(raw, history, line, cfg: GeorefParams, ground_z: float = 0.0):
+     (z0, ``sensor_bridge.ground``). ``used_poses`` are the bracketing poses of each
+     sample that has a pose, in time order, without repeats.
+     """
+-    offset = offset_xyz(cfg.sensor_offset_m)
++    offset = (0.0, 0.0, 0.0)  # DELIBERATE BREAK: the body-frame offset is ignored
+     stamps = [int(t) for t in raw.sample_stamps_us]
+     n = len(stamps)
+     cs, cd, ch = (np.full(n, np.nan, dtype=np.float32) for _ in range(3))
