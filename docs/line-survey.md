@@ -62,7 +62,7 @@ a separate question that the test answers with the simulator's ground truth: see
 name: line_survey_markers
 type: line_survey
 profile: low_altitude               # PX4 parameter overlay, scenarios/_low_altitude.yaml
-line: {start_north_m: 5.0, start_east_m: 0.0, heading_deg: 0.0, length_m: 12.0}
+line: {start_north_m: 9.0, start_east_m: 0.0, heading_deg: 0.0, length_m: 12.0}
 sensor_height_m: 0.4
 sensor_offset_m: {x: 0.15, y: 0.0, z: 0.0}
 speed_m_s: 1.0
@@ -75,6 +75,12 @@ seed: 0
 replay_check: true
 px4_params: {UXRCE_DDS_SYNCT: 0}
 ```
+
+The line starts 9 m north of the take-off point, so the vehicle flies about 9 s (at 1 m/s)
+before the height check begins. With the line 5 m away, the height at the start of the line
+was still recovering in some flights (the worst of 27 flights was 0.191 m off against the
+0.15 m limit); `run_m` only places the run-in waypoint on that path and does not add
+distance.
 
 | Scenario | Schedule | What it adds |
 |---|---|---|

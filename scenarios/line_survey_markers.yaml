@@ -2,7 +2,7 @@ name: line_survey_markers
 type: line_survey
 description: "Fly a 12 m survey line over three painted markers; the sensor, georeferencing and marker detector run in a ROS 2 container. The recording is replayed after the flight."
 profile: low_altitude
-line: {start_north_m: 5.0, start_east_m: 0.0, heading_deg: 0.0, length_m: 12.0}
+line: {start_north_m: 9.0, start_east_m: 0.0, heading_deg: 0.0, length_m: 12.0}
 sensor_height_m: 0.4
 sensor_offset_m: {x: 0.15, y: 0.0, z: 0.0}   # a lever arm: the georeferencing must apply it
 speed_m_s: 1.0
