@@ -160,7 +160,7 @@ before the backlog of poses: they are stamped with a pose clock that is old, so 
 0.5 s ahead of it times out before its own pose is processed, although the pose is in the queue. With
 the real `HoldQueue` code and a stall of 1.5 simulated seconds (0.4 s of wall time at the speed
 factor 3.7), the first 10 captures are fine and the rest are `no_pose`/`timeout`; processed in time
-order, none is lost (a model run once, not yet a test in the repository; the flight shows 15 and 17 of 32 and 33).
+order, none is lost (the unit tests of the fix below model it; the flight shows 15 and 17 of 32 and 33).
 
 **What stalled it.** The stalls coincide with disk wait on the runner: the two long ones at
 17:36:07 and 17:36:08, the seconds with 13 % and 26 % wait in the job's `vmstat` (five tasks blocked
