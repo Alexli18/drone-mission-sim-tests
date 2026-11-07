@@ -52,6 +52,7 @@ from framework.survey import (
     takeoff_sim_s,
     truth_figures,
 )
+from framework.ulog_checks import rng_fusion_check
 
 STATUS = "/survey/status"
 TRUTH = "/sim/capture_truth"
@@ -289,6 +290,12 @@ async def test_line_survey(cfg, scenario, drone, recorder, ros2, rosbridge, test
         record_property("reasons", ", ".join(f"{r}={n}" for r, n in counts.items()))
         record_property("captures_used", finalized["captures_used"])
 
+        # The estimator's own record of when the range finder joined the height estimate.
+        fusion_delay_s, fusion_failure = rng_fusion_check(ARTIFACTS / "ulog" / test_id,
+                                                          rule.rng_fusion_max_s)
+        record_property("rng_fusion_delay_s",
+                        "unknown" if fusion_delay_s is None else round(fusion_delay_s, 2))
+
         # The detector's output (the runner reads its file without ROS).
         markers = replay_check.read_markers(ros2.out_dir / "markers.json")
         verdict = evaluate_markers([m.s_m for m in survey.markers], [m["s_m"] for m in markers],
@@ -328,6 +335,10 @@ async def test_line_survey(cfg, scenario, drone, recorder, ros2, rosbridge, test
               "no usable capture the sensor built without a pose (usable_without_truth 0)",
               f"usable_without_truth {figures.usable_without_truth} "
               f"({figures.samples_without_pose} samples without a pose)")
+        # Rule 2a: the height estimate rests on the range finder soon after lift-off (a late
+        # fusion lets the vehicle hover low at the start of the line, docs/qa-notes.md).
+        if fusion_failure:
+            failures.append(fusion_failure)
         # Rule 2: flight over the line, from MAVSDK telemetry.
         check(height_err <= rule.flight_height_m,
               f"height within {h_v} ± {rule.flight_height_m} m over the line",

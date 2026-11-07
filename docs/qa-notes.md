@@ -233,7 +233,12 @@ What this does not show. The typical height error did not move (median 0.078 m a
 is the same (median 0.33 m against 0.34 m, p = 0.99). Flights above 0.15 m were 2 of 51
 before and 0 of 24 now, and flights above 0.10 m were 6 of 51 and 1 of 24; with a failure
 rate that low this is not enough to call the flake fixed, only to say that its cause is
-found and removed. The patch is a property of the simulation image; whether a real range
+found and removed. The line-survey test now also reads the PX4 log after the flight and fails
+when the range finder joined the height estimate later than 3 s after lift-off
+(`rng_fusion_max_s`; `framework/ulog_checks.py`). The limit sits between the 0.78 s maximum of
+the 24 flights with the patch and the 12.2 s of the flights without it; the same rule applied to
+those 51 flights fails 6 of them, so a return of the late fusion shows as a red test with the
+cause named, not only as a height error. The patch is a property of the simulation image; whether a real range
 finder arms the detector in the same way is not tested here.
 
 ## Deliberate-break checks

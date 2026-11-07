@@ -77,8 +77,9 @@ to decision.
 7.  **Regression protection.** A unit test checks that every patch in the image directory is
     applied by the Dockerfile and that the detector patch changes exactly one line; the
     weekly run (three seeds, every scenario) keeps counting the height rule; the limit
-    stays at 0.15 m. Not yet in place: a rule that reads the fusion start from the flight
-    log and fails when it is late.
+    stays at 0.15 m. A rule of the line-survey test reads the fusion start from the PX4 log
+    and fails when it is later than 3 s after lift-off (`framework/ulog_checks.py`); on the
+    51 flights without the patch it would have failed 6, on the 24 with it none.
 8.  **Decision.** The limit stays; the patch is part of the simulation image and is
     documented as simulation only. The finding is about the simulated sensor, and it is
     not verified for a real range finder, so it is no argument about hardware. Readiness
