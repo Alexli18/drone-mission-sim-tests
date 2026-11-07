@@ -100,6 +100,9 @@ jobs:
       - run: shellcheck scripts/*.sh docker/ros2-survey-base/*.sh
       # Two workers: the runner has 2 vCPUs.
       - run: pytest -m unit -n 2
+      # Each deliberate-break patch in docs/breaks/ must turn the unit tests red (and the
+      # clean tree green): the tests are shown to be able to fail.
+      - run: scripts/check_breaks.sh
 
   # Primes the PX4 image cache once per workflow run, so the sim and ROS jobs do
   # not each build it on a miss. On a hit it only checks that the entry exists.
