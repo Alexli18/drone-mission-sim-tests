@@ -11,14 +11,14 @@ model, headless and CPU-only on free GitHub Actions runners. Python tests
 scenario fails. The goal is to show simulation-based validation with mission
 scenarios as data, failure injection, and CI quality gates.
 
-**Status: milestones M1–M5 done.** This README claims only what CI shows. See the [design](docs/designs/drone_mission_sim_tests.md).
+**Status: milestones M1–M5 done.** The numbers below are tied to CI runs, except those marked as local. See the [design](docs/designs/drone_mission_sim_tests.md).
 
 **Start here:** [docs/test-strategy.md](docs/test-strategy.md) (what is tested and why, with one defect followed end to end), then [docs/evidence.md](docs/evidence.md) (each claim with its CI run, raw data and limit), then [At a glance](#at-a-glance) below.
 
 **Extension: a ROS 2 line survey.** A second suite flies a low survey line with a
-toy sensor on a ROS 2 pipeline fed by PX4 over uXRCE-DDS and checks the result end to end,
-plus the QA practice around it (a PX4 crash root-caused and patched, deliberate-break checks,
-CI cost control). It is described in the sections [ROS 2 line survey](#ros-2-line-survey-extension)
+toy sensor on a ROS 2 pipeline fed by PX4 over uXRCE-DDS, and checks the result end to end.
+The extension also covers the QA practice around it: a PX4 crash root-caused and patched,
+deliberate-break checks and CI cost control. It is described in the sections [ROS 2 line survey](#ros-2-line-survey-extension)
 and [Testing practice](#testing-practice); its CI evidence, including what is not stable yet, is in
 [docs/evidence.md](docs/evidence.md) and [What is not stable](#what-is-not-stable).
 
@@ -40,7 +40,7 @@ and [Testing practice](#testing-practice); its CI evidence, including what is no
     gone. Causes and run ids: [docs/evidence.md](docs/evidence.md).
 *   **One defect, end to end:** the vehicle sometimes hovered 0.2 m low at the start of the survey line.
     Cause: the estimator's range-finder "stuck" detector kept the range finder out of the height estimate
-    for up to 12 s after take-off in the simulation. Found from 68 flight logs, confirmed with a one-line
+    for up to 12 s after take-off in the simulation. Found from flight logs, confirmed with a one-line
     change in the simulation image (24 flights, fusion within 0.8 s), now watched by a rule that reads the
     PX4 log. [Case study](docs/test-strategy.md#one-defect-end-to-end-the-height-of-the-vehicle-at-the-start-of-the-line),
     [figures](docs/qa-notes.md#height-at-the-start-of-the-line).
@@ -54,7 +54,7 @@ and [Testing practice](#testing-practice); its CI evidence, including what is no
 *   **ULog:** PX4's flight log; the tests read it after the flight.
 *   **Estimator (EKF):** the part of the autopilot that combines the sensors into the position and height it believes in. The tests compare that belief with the simulator's truth.
 *   **Range finder:** the downward distance sensor that gives the height above the ground.
-*   **Lever arm:** the offset of the payload sensor from the vehicle's reference point (15 cm here); a georeferencing that ignores it puts every marker 15 cm off.
+*   **Lever arm:** the offset of the toy sensor from the vehicle's reference point (15 cm here); a georeferencing that ignores it puts every marker 15 cm off.
 *   **Georeferencing:** placing each sensor capture on the survey line from the vehicle's pose at the capture time.
 *   **Fusion:** a sensor's data being used by the estimator.
 
@@ -88,12 +88,12 @@ flowchart LR
 
 ## ROS 2 line survey (extension)
 
-The same framework, extended to a drone with a payload: PX4 SIH flies a 12 m line 0.4 m above the
-ground; a toy sensor in a ROS 2 Humble container takes timestamped captures over three painted
-ground markers; a georeferencing node places each capture on the line from PX4's pose (received
-over uXRCE-DDS), decides whether it is usable (`ok`, `outside_line`, `off_line`, `off_height`,
-`no_pose`, `saturated`) and a detector finds the markers. The test talks to ROS over rosbridge
-only.
+The same framework is extended to a drone with a payload. PX4 SIH flies a 12 m line 0.4 m above the
+ground. A toy sensor in a ROS 2 Humble container takes timestamped captures over three painted
+ground markers. A georeferencing node places each capture on the line from PX4's pose (received
+over uXRCE-DDS) and gives it a status that says whether the capture is usable (`ok`,
+`outside_line`, `off_line`, `off_height`, `no_pose`, `saturated`). A detector finds the markers.
+The test talks to ROS over rosbridge only.
 
 ```mermaid
 flowchart LR
@@ -112,7 +112,7 @@ What the end-to-end test checks (details in [docs/line-survey.md](docs/line-surv
 *   with the sensor clock 20 ms ahead or behind PX4's, every georeferenced position shifts by
     speed x offset (within 1 cm);
 *   replaying the recorded bag into fresh nodes gives the same usable/unusable decisions from
-    takeoff on and the same markers;
+    take-off on and the same markers;
 *   the sensor never falls more than 5 simulated seconds behind the poses;
 *   the nodes under test subscribe to no simulation-only topic.
 
@@ -133,7 +133,7 @@ Causes, run ids and numbers: [docs/evidence.md](docs/evidence.md#what-is-not-sta
     [QA notes](docs/qa-notes.md#height-at-the-start-of-the-line).
 *   **Position of the second marker (limit 0.10 m):** the largest error measured was 0.096 m, a margin of 4 mm.
     The limit stays: it is what catches a georeferencing that ignores the 15 cm lever arm (`docs/breaks/`).
-*   **A stall of the georeferencing node (fixed):** one weekly run lost 32 captures to `no_pose` although every
+*   **A stall of the georeferencing node (fixed; confirmed by unit tests, not by CI):** one weekly run lost 32 captures to `no_pose` although every
     pose had arrived. The hold timeout now also needs wall time; a unit test models the stall, and the stalls are
     too rare for CI alone to confirm it.
     [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
@@ -152,7 +152,7 @@ follows one real defect from symptom to decision.
 *   **A flaky crash with a root cause upstream.** PX4 v1.18.0-rc1 aborted in its lockstep scheduler
     (a glibc assertion, PX4 issue 29060). The tests now run a PX4 image rebuilt with the upstream
     fix (`docker/px4-sitl/`, `scripts/build_px4_image.sh`), cached in CI by digest and directory hash.
-*   **Flakes found and root-caused:** the DDS gotchas, pose loss from a small QoS queue, CPU
+*   **Flakes found and root-caused:** the DDS setup problems, pose loss from a small QoS queue, CPU
     saturation of a 2-vCPU runner (a lower speed factor for the ROS suite), a sensor node falling
     behind (a lag guard), a replay race on subscriber connect, a reactor-thread bug in the rosbridge
     client and a race in the unit test's own fake server found under `pytest -n 2`. The latest three:
@@ -166,7 +166,7 @@ follows one real defect from symptom to decision.
     simulator's ground truth from the ULog on the line and compares it with what PX4 estimates, which
     is what the test sees.
 *   **Deliberate breaks.** `docs/breaks/*.patch` each break one thing the suite guards;
-    `scripts/check_breaks.sh` proves the unit tests go red for every one, in the unit job of every CI run.
+    `scripts/check_breaks.sh` checks that the unit tests fail for every one; it runs in the unit job.
 *   **CI cost control.** Unit-only on push to `main`, path filters per suite, a `full-ci` label,
     docs-only changes ignored, a nightly run only if `main` changed, a weekly multi-seed pass-rate
     run, cancelled superseded pull-request runs, cached images and pip, `pytest-xdist`.
@@ -192,8 +192,9 @@ changes (all of them with the `full-ci` label); documentation-only changes run n
 schedule runs every suite only if `main` changed in the last 24 hours, and a weekly one runs the
 ROS survey three times with different seeds. It can also be started by hand from the Actions tab
 (`gh workflow run sim-tests.yml -f runs=3` runs every suite 3 times, as the pass-rate evidence
-above did; `-f weekly=true` runs the weekly plan: the ROS survey, three seeds, all four scenarios). The report job writes the results table. See
-[CI cost control](docs/qa-notes.md#ci-cost-control).
+above did; `-f weekly=true` runs the weekly plan: the ROS survey, three seeds, all four scenarios). The report job writes the results table. A full run of every suite three times takes about 4 minutes of wall time
+([run 42408748342](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42408748342): 4 min 10 s; a pull request that touches code takes 3.5 to 4.3 minutes).
+See [CI cost control](docs/qa-notes.md#ci-cost-control).
 
 Every flight job also writes Allure results (`allure-results-<suite>-<run>` artifacts), and the `allure`
 job merges them into one HTML report, the `allure-report` artifact of the run: download it, unzip it and
@@ -224,11 +225,11 @@ tests to fail (CI runs it in the unit job).
 
 **Locally on macOS (Docker Desktop, Apple Silicon):** the same commands work;
 the image runs natively on arm64 and its entrypoint routes MAVLink to the Mac.
-SIH reaches only about half the requested speed there (×3.7 of ×10; ×8.7 on
+SIH reaches ×3.7 of the requested ×10 there (×8.7 on
 the CI runner). The flight tests still pass; the smoke test's speed-floor check
-is enforced only in CI and reported as a warning locally. The ROS suite on a Mac needs the
+is enforced only in CI and gives a warning locally. The ROS suite on a Mac needs the
 `--dds-own-ip` workaround (applied automatically; see [docs/ros-bridge.md](docs/ros-bridge.md)). Timing numbers in
-this README come from CI, which is the source of truth.
+this README come from CI, which is the source of truth, except the local figures marked as such.
 
 ## Adding a scenario
 
@@ -284,8 +285,8 @@ not scenarios.
     failure injections (spike S5). Link loss is therefore produced with
     `iptables` (Linux only; the test is skipped on macOS), and RC loss by
     stopping the MAVLink manual-control stream.
-*   PX4 rejects any mission, fence upload during a mission, or goto target
-    that crosses the geofence ("Geofence violation for waypoint 3", spike
+*   PX4 rejects a mission, a fence upload during a mission, or a goto target
+    if it crosses the geofence ("Geofence violation for waypoint 3", spike
     S9). The geofence test therefore leaves the fence with offboard velocity
     setpoints, not by flying a mission.
 *   Barometer and magnetometer failure injection is accepted by PX4 in SIH
@@ -303,8 +304,8 @@ not scenarios.
     test checks the data path, not the estimator; the estimator is measured against
     ground truth by a separate spike.
 *   The patched PX4 image carries two patches. The lockstep fix is a stopgap until the pinned PX4
-    release contains the upstream fix; building the image compiles PX4 and is slow on a cache miss.
-    The stuck-detector patch changes the simulated autopilot's behaviour so that the simulated range
-    finder (which reports about 0 m on the ground) does not keep itself out of the height estimate; it
-    is not verified for a real range finder.
+    release contains the upstream fix. The stuck-detector patch changes the simulated autopilot: the
+    simulated range finder reports about 0 m on the ground, and the detector no longer keeps it out of the
+    height estimate; this is not verified for a real range finder. Building the image compiles PX4 and is
+    slow on a cache miss.
 *   This is a simulation suite. Nothing here is hardware-in-the-loop or a flight with a real vehicle.
