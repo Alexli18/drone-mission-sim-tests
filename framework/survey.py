@@ -8,7 +8,9 @@ tested in ``tests/unit/test_survey.py``.
 from __future__ import annotations
 
 import math
+from collections import Counter
 from dataclasses import dataclass
+from itertools import pairwise
 
 from sensor_bridge.coverage import coverage
 
@@ -181,6 +183,10 @@ def truth_figures(truth_msgs, georef_msgs, length_m: float, ds: float,
     * clock shift: mean over the usable captures' samples of the georeferenced
       position minus the true one (v x offset for a clock offset);
     * usable without truth: usable captures with a sample the sensor had no pose for.
+
+    Only the ids present in both recordings are paired, and a repeated id keeps its last
+    message, so a lost or duplicated capture does not show here: ``capture_stream_failures``
+    checks the streams themselves.
     """
     truth = {int(m["capture_id"]): m for m in truth_msgs}
     georef = {int(m["raw"]["capture_id"]): m for m in georef_msgs}
@@ -201,6 +207,80 @@ def truth_figures(truth_msgs, georef_msgs, length_m: float, ds: float,
         clock_shift_mean_m=_nanmean(shifts), usable_without_truth=without_truth,
         samples_without_pose=sum(sum(math.isnan(v) for v in _floats(m["sample_s"]))
                                  for m in truth.values()))
+
+
+# Capture stream integrity ------------------------------------------------------------
+
+
+def _id_text(ids, limit: int = 10) -> str:
+    ids = sorted(ids)
+    text = ", ".join(str(i) for i in ids[:limit])
+    return text + (f", ... ({len(ids)} in all)" if len(ids) > limit else "")
+
+
+def _stream_problems(ids: list[int], start: int, last: int) -> list[str]:
+    """What is wrong with one recorded stream of capture ids, in the window start..last."""
+    problems = []
+    repeated = [i for i, n in Counter(ids).items() if n > 1]
+    if repeated:
+        problems.append(f"repeated ids {_id_text(repeated)}")
+    missing = set(range(start, last + 1)) - set(ids)
+    if missing:
+        problems.append(f"missing ids {_id_text(missing)}")
+    beyond = [i for i in ids if i > last]
+    if beyond:
+        problems.append(f"ids after the last published one ({last}): {_id_text(beyond)}")
+    inversion = next(((a, b) for a, b in pairwise(ids) if b < a), None)
+    if inversion:
+        problems.append(f"out of order (id {inversion[1]} arrived after {inversion[0]})")
+    return problems
+
+
+def capture_window_start(truth_msgs, georef_msgs) -> int | None:
+    """First capture id both recordings can hold: the test subscribes after the sensor has
+    started, so each recording begins at the first capture it received. None: a stream is
+    empty."""
+    truth = [int(m["capture_id"]) for m in truth_msgs]
+    georef = [int(m["raw"]["capture_id"]) for m in georef_msgs]
+    if not truth or not georef:
+        return None
+    return max(min(truth), min(georef))
+
+
+def capture_stream_failures(truth_msgs, georef_msgs, status: dict,
+                            last: int) -> list[tuple[str, str]]:
+    """Every capture the sensor published reached the georeferencing node and the test.
+
+    ``last``: the id the sensor reported at its stop (ids run 0, 1, 2, ... without gaps).
+    Returns (expected, actual) failures:
+
+    * both recordings hold every id from the window start (``capture_window_start``) to
+      ``last`` exactly once and in order, nothing after ``last``;
+    * the georeferencing node counted ``last + 1`` raw captures and released as many (it
+      counts from the first capture, so a capture lost before the test subscribed shows
+      here).
+    """
+    failures = []
+    start = capture_window_start(truth_msgs, georef_msgs)
+    streams = (("truth", [int(m["capture_id"]) for m in truth_msgs]),
+               ("georeferenced", [int(m["raw"]["capture_id"]) for m in georef_msgs]))
+    for name, ids in streams:
+        if not ids:
+            failures.append((f"the {name} recording holds the captures of the flight",
+                             "no message recorded"))
+            continue
+        problems = _stream_problems(ids, min(ids) if start is None else start, last)
+        if problems:
+            first = min(ids) if start is None else start
+            failures.append(
+                (f"the {name} recording holds every capture id {first}..{last} once, in order",
+                 "; ".join(problems)))
+    expected = last + 1
+    for key, what in (("captures_seen", "raw captures counted by the georeferencing node"),
+                      ("released", "captures released by the georeferencing node")):
+        if int(status[key]) != expected:
+            failures.append((f"{what}: {expected} (ids 0..{last})", f"{status[key]}"))
+    return failures
 
 
 # Marker verdict ----------------------------------------------------------------------

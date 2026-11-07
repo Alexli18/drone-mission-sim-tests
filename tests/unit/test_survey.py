@@ -3,12 +3,17 @@ figures and the marker verdict (no simulator, no ROS)."""
 
 import math
 
+import numpy as np
 import pytest
+from sensor_bridge.coverage import coverage
+from sensor_bridge.line import Line
 
 from framework.config import load_config
-from framework.mission import list_scenarios, load_scenario
+from framework.mission import SurveyLine, list_scenarios, load_scenario
 from framework.survey import (
     FINALIZE_MARGIN_S,
+    capture_stream_failures,
+    capture_window_start,
     evaluate_markers,
     node_params,
     reason_counts,
@@ -168,6 +173,146 @@ def test_truth_figures_pair_by_capture_id():
     truth, georef = line_of_captures(count=10)
     f = truth_figures(truth[:6], georef[3:], 12.0, 0.05, 1.5)
     assert f.pairs == 3
+
+
+# Capture stream integrity
+
+
+def counted(last, **kw):
+    """The georeferencing node's status after ``last + 1`` captures."""
+    return {"captures_seen": last + 1, "released": last + 1, **kw}
+
+
+def test_complete_streams_have_no_failures():
+    truth, georef = line_of_captures(count=10)
+    assert capture_stream_failures(truth, georef, counted(9), last=9) == []
+
+
+def test_recordings_that_start_after_the_sensor_are_complete_from_their_first_capture():
+    truth, georef = line_of_captures(count=10)
+    # The test subscribes after the sensor started: the truth stream begins at 2, the
+    # georeferenced one at 3; the node itself counted every capture from 0.
+    assert capture_window_start(truth[2:], georef[3:]) == 3
+    assert capture_stream_failures(truth[2:], georef[3:], counted(9), last=9) == []
+
+
+def test_a_missing_capture_in_the_middle_is_named_in_the_stream_that_lost_it():
+    truth, georef = line_of_captures(count=10)
+    del truth[4]
+    (expected, actual), = capture_stream_failures(truth, georef, counted(9), last=9)
+    assert "truth" in expected and "0..9" in expected
+    assert actual == "missing ids 4"
+    # truth_figures alone pairs the common ids and raises nothing.
+    assert truth_figures(truth, georef, 12.0, 0.05, 1.5).pairs == 9
+
+
+def test_a_missing_georeferenced_capture_is_named():
+    truth, georef = line_of_captures(count=10)
+    del georef[6], georef[3]
+    (expected, actual), = capture_stream_failures(truth, georef, counted(9), last=9)
+    assert "georeferenced" in expected and actual == "missing ids 3, 6"
+
+
+def test_a_repeated_capture_is_named():
+    truth, georef = line_of_captures(count=10)
+    georef.insert(5, dict(georef[5]))
+    (_, actual), = capture_stream_failures(truth, georef, counted(9), last=9)
+    assert actual == "repeated ids 5"
+    # truth_figures keeps the last copy and says nothing.
+    assert truth_figures(truth, georef, 12.0, 0.05, 1.5).pairs == 10
+
+
+def test_swapped_captures_are_reported_as_out_of_order():
+    truth, georef = line_of_captures(count=10)
+    truth[2], truth[3] = truth[3], truth[2]
+    (expected, actual), = capture_stream_failures(truth, georef, counted(9), last=9)
+    assert "truth" in expected and actual == "out of order (id 2 arrived after 3)"
+
+
+def test_the_last_capture_missing_from_a_stream_is_a_missing_id():
+    truth, georef = line_of_captures(count=10)
+    (_, actual), = capture_stream_failures(truth[:9], georef, counted(9), last=9)
+    assert actual == "missing ids 9"
+
+
+def test_a_capture_after_the_last_published_one_is_reported():
+    truth, georef = line_of_captures(count=11)
+    (_, actual), = capture_stream_failures(truth, georef[:10], counted(9), last=9)
+    assert actual == "ids after the last published one (9): 10"
+
+
+def test_captures_lost_before_the_node_or_before_its_release_are_counted_against_the_sensor():
+    truth, georef = line_of_captures(count=10)
+    failures = capture_stream_failures(truth, georef, counted(9, captures_seen=9, released=8),
+                                       last=9)
+    assert [a for _, a in failures] == ["9", "8"]
+    assert "raw captures counted" in failures[0][0] and "released" in failures[1][0]
+
+
+def test_an_empty_stream_is_reported_and_does_not_hide_the_other_one():
+    truth, _ = line_of_captures(count=10)
+    failures = capture_stream_failures(truth, [], counted(9), last=9)
+    assert capture_window_start(truth, []) is None
+    assert failures == [("the georeferenced recording holds the captures of the flight",
+                         "no message recorded")]
+    del truth[4]
+    assert capture_stream_failures(truth, [], counted(9), last=9)[0][1] == "missing ids 4"
+
+
+def test_a_long_list_of_missing_ids_is_cut_short():
+    truth, georef = line_of_captures(count=30)
+    georef = georef[:5] + georef[17:]
+    (_, actual), = capture_stream_failures(truth, georef, counted(29), last=29)
+    assert actual == "missing ids 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, ... (12 in all)"
+
+
+# Independent references (docs/oracle-independence.md)
+
+
+def coverage_on_a_grid(positions, usable, length_m, ds_m, gap_factor, cells=40_000):
+    """Coverage by another algorithm: walk a fine grid along the line and call a cell
+    covered when the gap between the usable captures around it is within the limit."""
+    points = np.array(sorted(float(s) for s, ok in zip(positions, usable, strict=True)
+                             if ok and math.isfinite(s) and 0.0 <= s <= length_m))
+    points = np.concatenate(([0.0], points, [length_m]))
+    centres = (np.arange(cells) + 0.5) * (length_m / cells)
+    right = np.searchsorted(points, centres)
+    gaps = points[right] - points[right - 1]
+    return float(np.mean(gaps <= gap_factor * ds_m)), float(np.max(np.diff(points)))
+
+
+@pytest.mark.parametrize("seed", range(12))
+def test_coverage_agrees_with_a_grid_reference_on_random_captures(seed):
+    rng = np.random.default_rng(seed)
+    length, ds = 12.0, 0.05
+    positions = np.arange(0.0, length + 1e-9, ds / 2)
+    positions = positions + rng.normal(0.0, 0.004, positions.size)
+    positions[rng.random(positions.size) < rng.uniform(0.0, 0.5)] = math.nan
+    for _ in range(rng.integers(0, 4)):             # holes of 1-40 captures
+        a = rng.integers(0, positions.size - 40)
+        positions[a:a + rng.integers(1, 40)] = math.nan
+    usable = rng.random(positions.size) < 0.9
+    ours = coverage(positions, usable, length, ds, 1.5)
+    fraction, max_gap = coverage_on_a_grid(positions, usable, length, ds, 1.5)
+    assert ours.fraction == pytest.approx(fraction, abs=2e-3)
+    assert ours.max_gap_m == pytest.approx(max_gap, abs=1e-9)
+
+
+@pytest.mark.parametrize("seed", range(5))
+def test_the_two_line_implementations_project_alike(seed):
+    """The ROS chain projects with sensor_bridge.line.Line, the test's own telemetry
+    checks with mission.SurveyLine: two implementations, so a mistake in one does not
+    cancel out between the sensor and the oracle."""
+    rng = np.random.default_rng(seed)
+    start_n, start_e = rng.uniform(-30, 30, 2)
+    heading, length = rng.uniform(0, 360), rng.uniform(5, 40)
+    ros_line = Line(start_n, start_e, heading, length)
+    test_line = SurveyLine(start_n, start_e, heading, length)
+    for north, east in rng.uniform(-60, 60, (50, 2)):
+        assert ros_line.project(north, east) == pytest.approx(test_line.project(north, east),
+                                                              abs=1e-9)
+    s, d = rng.uniform(0, length), rng.uniform(-2, 2)
+    assert test_line.project(*test_line.point(s, d)) == pytest.approx((s, d), abs=1e-9)
 
 
 # The marker verdict
