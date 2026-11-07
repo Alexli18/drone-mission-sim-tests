@@ -27,13 +27,17 @@ The reasoning behind the tests is in [test-strategy.md](test-strategy.md), the d
 Measured on the runs above and written without softening.
 
 *   **Line survey, weekly run [42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449), seed 3 job, `line_survey_clock_minus`: coverage
-    0.8631 against 0.95.** Cause found, not fixed. The georeferencing node stopped twice for about 0.4 s;
-    the captures that arrived meanwhile were released in one burst and 32 of them got `no_pose` although
-    every pose had arrived (no pose gap, no dropped pose, PX4 published without a gap). The stalls
-    coincide with disk wait on the runner (`vmstat`: 13 % and 26 % wait in those two seconds). Two other
-    weekly runs (24 flights) had no `no_pose` capture at all; in the later one, `line_survey_clock_minus`
-    of the seed 3 job still reached only coverage 0.9681 against 0.95 without any `no_pose`, which is not
-    explained. How it was found: [qa-notes.md](qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
+    0.8631 against 0.95. Fixed in the node, confirmed by a model, not by CI.** The georeferencing node
+    stopped twice for about 0.4 s; the captures that arrived meanwhile were released in one burst and 32
+    of them got `no_pose` although every pose had arrived. The stalls coincide with disk wait on the
+    runner. After the fix (hold timeout also needs wall time): 4 weekly runs on the fix branch, 48
+    flights, no `no_pose`, coverage 1.0 in all. How it was found:
+    [qa-notes.md](qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
+*   **Test bench, two weekly runs on the fix branch ([42399318960](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42399318960), [42400058966](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42400058966)): 4 of 24 tests
+    failed in rosbridge, not in the node.** `/rosapi/node_details` did not exist (1), gave no reply within
+    30 s (2), and 15 consecutive capture ids were missing from the test's recordings (1; rule 0 caught it,
+    the node had released 645 of 645). The control on `main` (2 runs) and the other four runs on the branch
+    were clean (72 of 72). Cause not found.
 *   The height rule, the marker margin and the `/rosapi/node_details` flake are in the README
     section "What is not stable" and in [qa-notes.md](qa-notes.md).
 

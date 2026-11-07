@@ -132,10 +132,22 @@ predict the length of a stall. The node writes
 runner whose disk was busy with PX4's log and the bag. That is a correlation, not a proof; a
 stall in the DDS transport would look the same from here.
 
-**Status.** Found, not fixed. The test did its job: it caught a node that loses good data when it is
-stalled. Options: a wall-clock guard on the simulated-time timeout (a capture is not timed out until it
-has been held for some wall time), no file writes in the callbacks, and a counter of stalls so that they
-are visible. Until then the weekly run is the measure: 1 of 24 flights failed on it.
+**Fix.** The timeout also needs `hold_min_wall_s` (1 s) of wall time, so a backlog that is worked
+off within milliseconds cannot time a capture out; the node counts stalls (callbacks 0.15 s apart or more)
+in its stats line (`stalls=`, `max_stall_s=`). Unit tests model a stall of 1.5 simulated seconds: all
+30 captures are `covered`/`ok` with the guard, 20 are `no_pose` without it, and removing the guard from
+the code turns two tests red. Stalls are rare (1 flight in 24), so CI can only show that nothing breaks:
+on the fix branch, 4 weekly runs (48 flights) had no `no_pose` capture and coverage 1.0 in every
+flight, and the node's own stall counter read 0 to 1 stalls of 0.16 to 0.17 s in the logs looked at.
+
+**A different failure in the same window.** Two other weekly runs on the branch failed in the test
+bench, not in the node: [42399318960](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42399318960) (`/rosapi/node_details` did not exist in one job; in another
+job 15 consecutive capture ids were missing from the test's recordings of the truth and of the
+georeferenced captures, while the node's counters show 645 of 645 captures released, none `no_pose`) and
+[42400058966](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42400058966) (`/rosapi/node_details` gave no reply within 30 s, twice). Rule 0 caught the missing
+ids as intended. The two control runs on `main` right after were 24 of 24, and the other four runs on the
+branch 48 of 48, so it looks like a spell of a slow runner pool, but that is a guess: rosbridge serves
+service calls and the recordings on its main thread, and a stall there looks the same from the test.
 
 ## Replay race on subscriber connect
 

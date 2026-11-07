@@ -56,15 +56,18 @@ Measured, not hidden.
 *   **Position of the second marker, limit 0.10 m.** The largest error in 48 flights recorded so far is
     0.096 m, a margin of 4 mm. The limit stays: it is what catches a georeferencing that ignores the 15 cm sensor
     offset (`docs/breaks/`).
-*   **Captures wrongly marked `no_pose` after a stall of the georeferencing node.** In
+*   **Captures wrongly marked `no_pose` after a stall of the georeferencing node (fixed).** In
     [run 42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449) the node stopped for 0.4 s twice; the captures that arrived meanwhile
-    were released in one burst, and 32 of them got `no_pose` although every pose had arrived; one test
-    (`line_survey_clock_minus`) fell to coverage 0.8631 against 0.95. The stalls coincide with disk
-    wait on the runner. The code under test turns a stall into data loss; it is not fixed yet.
-    Details: [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
+    were released in one burst, and 32 of them got `no_pose` although every pose had arrived (coverage
+    0.8631 against 0.95 in one test). The hold timeout now also needs wall time; a unit test models the
+    stall. The stalls are rare, so CI cannot confirm the fix by itself: 4 weekly runs after it showed no
+    `no_pose`. Details: [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
 *   **A test-bench flake before take-off.** The `/rosapi/node_details` call got no reply within 30 s
-    twice (once on [run 42374481708](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42374481708), which passed on rerun). It happens before the
-    flight, so it says nothing about the vehicle.
+    or did not exist yet: once on [run 42374481708](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42374481708), which passed on rerun, and three times
+    in two consecutive weekly runs on the fix branch ([42399318960](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42399318960),
+    [42400058966](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42400058966)), together with one loss of 15 capture ids in the test's recordings;
+    the other six weekly runs of that period were clean. It happens in the bench (rosbridge), not in the vehicle or the
+    node. Not explained; see [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
 
 ## Architecture
 
