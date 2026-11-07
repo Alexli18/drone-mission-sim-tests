@@ -1,0 +1,19 @@
+Deliberate break: rule 3: the mode that must follow the first one (Land after Return) is no longer required (framework/assertions.py, failsafe pass rule).
+
+Expected: the unit tests go red: test_then_mode_must_follow_before_disarm in tests/unit/test_assertions.py.
+The flight tests are not expected to be needed for this: the rule is pure logic over the
+mode history, so the unit layer owns it.
+
+diff --git a/framework/assertions.py b/framework/assertions.py
+index 0752b49..11eb51a 100644
+--- a/framework/assertions.py
++++ b/framework/assertions.py
+@@ -265,7 +265,7 @@ def failsafe_verdict(recorder, expected, reference, active_mode: str):
+         return None
+ 
+     disarmed = recorder.latest("armed") is False
+-    if expected.then_mode is not None:
++    if False:
+         index = after.index(expected.mode_reached)
+         if expected.then_mode not in after[index + 1:]:
+             if disarmed:

@@ -1,0 +1,19 @@
+Deliberate break: rule 3: the first failsafe mode may be a different one than expected (Land instead of Return passes) (framework/assertions.py, failsafe pass rule).
+
+Expected: the unit tests go red: test_cuj3_land_instead_of_return_fails in tests/unit/test_assertions.py.
+The flight tests are not expected to be needed for this: the rule is pure logic over the
+mode history, so the unit layer owns it.
+
+diff --git a/framework/assertions.py b/framework/assertions.py
+index 0752b49..c58b9fc 100644
+--- a/framework/assertions.py
++++ b/framework/assertions.py
+@@ -248,7 +248,7 @@ def failsafe_verdict(recorder, expected, reference, active_mode: str):
+     if expected.mode_reached is not None:
+         candidates = [m for m in after if m not in expected.allowed_before]
+         first = candidates[0] if candidates else None
+-        if first is not None and first != expected.mode_reached:
++        if False:
+             raise FlightAssertionError(f"first failsafe mode {expected.mode_reached}",
+                                        f"{first} (modes after the fault: {after})", recorder)
+         reached = first == expected.mode_reached

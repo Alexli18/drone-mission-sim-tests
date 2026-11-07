@@ -11,6 +11,7 @@ from framework.assertions import (
     Moment,
     Reference,
     assert_cross_track,
+    assert_failsafe_outcome,
     failsafe_verdict,
     latlon_to_offset,
     line_speed,
@@ -48,6 +49,9 @@ class FakeRecorder:
 
     def snapshot(self):
         return {}
+
+    def check_alive(self):
+        pass
 
 
 def expect(**kw):
@@ -112,6 +116,45 @@ def test_mission_after_disarm_is_ignored():
 
 def test_not_landed_keeps_waiting():
     assert verdict([(100, "MISSION"), (125, "RETURN_TO_LAUNCH")], armed=False) is None
+
+
+def test_landed_but_still_armed_keeps_waiting():
+    modes = [(100, "MISSION"), (125, "RETURN_TO_LAUNCH")]
+    assert verdict(modes, armed=True, landed="ON_GROUND") is None
+
+
+def test_leave_mode_needs_a_mode_change_and_fails_when_the_mission_ends_first():
+    expected = expect(mode_reached=None, leave_mode="MISSION", allowed_before=())
+    assert verdict([(100, "MISSION")], expected) is None
+    with pytest.raises(FlightAssertionError, match="failsafe never fired"):
+        verdict([(100, "MISSION")], expected, progress=(22, 22))
+
+
+HOME = SimpleNamespace(latitude_deg=47.397742, longitude_deg=8.545594)
+CFG = SimpleNamespace(timeouts_wall_s=SimpleNamespace(failsafe=1e9), poll_interval_s=0.001)
+
+
+def landed_north_of_home(north_m):
+    lat, lon = offset_to_latlon(HOME.latitude_deg, HOME.longitude_deg, north_m, 0.0)
+    recorder = FakeRecorder([(100, "MISSION"), (120, "HOLD"), (125, "RETURN_TO_LAUNCH")], **LANDED)
+    recorder._latest["position"] = SimpleNamespace(latitude_deg=lat, longitude_deg=lon)
+    return recorder
+
+
+async def test_landing_within_the_distance_passes_and_returns_it():
+    distance = await assert_failsafe_outcome(landed_north_of_home(3.0), expect(), REF, CFG, HOME)
+    assert distance == pytest.approx(3.0, abs=0.1)
+
+
+async def test_landing_too_far_from_home_fails():
+    with pytest.raises(FlightAssertionError, match=r"landed within 5\.0 m of home"):
+        await assert_failsafe_outcome(landed_north_of_home(12.0), expect(), REF, CFG, HOME)
+
+
+async def test_no_distance_limit_accepts_any_landing():
+    expected = expect(max_dist_from_home_m=None)
+    distance = await assert_failsafe_outcome(landed_north_of_home(300.0), expected, REF, CFG, HOME)
+    assert distance > 250
 
 
 def test_offboard_flow_uses_offboard_as_active_mode():

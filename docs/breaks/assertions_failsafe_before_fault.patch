@@ -1,0 +1,19 @@
+Deliberate break: rule 2: a failsafe mode before the fault is no longer an error (framework/assertions.py, failsafe pass rule).
+
+Expected: the unit tests go red: test_failsafe_before_the_fault_fails in tests/unit/test_assertions.py.
+The flight tests are not expected to be needed for this: the rule is pure logic over the
+mode history, so the unit layer owns it.
+
+diff --git a/framework/assertions.py b/framework/assertions.py
+index 0752b49..d47ed45 100644
+--- a/framework/assertions.py
++++ b/framework/assertions.py
+@@ -240,7 +240,7 @@ def failsafe_verdict(recorder, expected, reference, active_mode: str):
+     """
+     history = recorder.mode_history()
+     before = [m for _, wall, m in history if reference.start.wall_s <= wall < reference.trigger.wall_s]
+-    if any(mode != active_mode for mode in before):
++    if False:
+         raise FlightAssertionError(f"only {active_mode} before the fault",
+                                    f"saw {before} (failsafe before fault)", recorder)
+     after = [m for _, wall, m in history if wall >= reference.trigger.wall_s and m != active_mode]

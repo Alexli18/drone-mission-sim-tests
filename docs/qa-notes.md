@@ -344,6 +344,14 @@ red (and, first, green without the patch). The script runs in the `unit` job of 
 | `nearest_pose.patch` | The georeferencing uses the nearest pose instead of interpolating | 6 unit tests: the position, interpolation and clock-offset tests of `test_georeference.py` |
 | `no_lever_arm.patch` | The georeferencing ignores the sensor's body-frame offset | 4 unit tests: the offset test of `test_georeference.py` and the in-process chain tests of `test_markers.py` (markers 12 to 15 cm off) |
 | `ignore_clock_offset.patch` | The sensor stamps captures with the true time, not the sensor clock | 3 unit tests in `test_markers.py` (stamps and marker shift) |
+| `assertions_*.patch` (9) | One rule of the failsafe verdict each (`failsafe_verdict` and `assert_failsafe_outcome` in `framework/assertions.py`): a failsafe before the fault, the first failsafe mode, `allowed_before`, `then_mode`, `leave_mode`, landed, disarmed, a mission that ends without a failsafe, the landing distance from home | 1 to 8 unit tests each in `tests/unit/test_assertions.py` |
+
+The nine `assertions_*.patch` files were written to answer "can the failsafe verdict fail?". Three
+of them were first **not** caught: the unit tests stayed green when the disarm requirement was removed,
+when the landing distance from home was no longer checked, and when `leave_mode` was accepted before any
+mode change. Those rules had no test; three tests (and, for the distance, a test of
+`assert_failsafe_outcome` with a fake recorder) were added, and now every patch turns at least one unit
+test red.
 
 Not every break is caught by the same layer, on purpose: the flight scenarios use a
 lever arm and a clock offset so that the end-to-end test catches these too, but the unit

@@ -1,0 +1,19 @@
+Deliberate break: rule 3: a Hold before the expected mode counts as the first failsafe mode (framework/assertions.py, failsafe pass rule).
+
+Expected: the unit tests go red: the hold-then-return tests in tests/unit/test_assertions.py.
+The flight tests are not expected to be needed for this: the rule is pure logic over the
+mode history, so the unit layer owns it.
+
+diff --git a/framework/assertions.py b/framework/assertions.py
+index 0752b49..1d99748 100644
+--- a/framework/assertions.py
++++ b/framework/assertions.py
+@@ -246,7 +246,7 @@ def failsafe_verdict(recorder, expected, reference, active_mode: str):
+     after = [m for _, wall, m in history if wall >= reference.trigger.wall_s and m != active_mode]
+ 
+     if expected.mode_reached is not None:
+-        candidates = [m for m in after if m not in expected.allowed_before]
++        candidates = list(after)
+         first = candidates[0] if candidates else None
+         if first is not None and first != expected.mode_reached:
+             raise FlightAssertionError(f"first failsafe mode {expected.mode_reached}",

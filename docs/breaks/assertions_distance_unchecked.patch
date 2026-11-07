@@ -1,0 +1,19 @@
+Deliberate break: rule 6: the landing distance from home is no longer checked (framework/assertions.py, failsafe pass rule).
+
+Expected: the unit tests go red: test_landing_too_far_from_home_fails in tests/unit/test_assertions.py.
+The flight tests are not expected to be needed for this: the rule is pure logic over the
+mode history, so the unit layer owns it.
+
+diff --git a/framework/assertions.py b/framework/assertions.py
+index 0752b49..fde1bf8 100644
+--- a/framework/assertions.py
++++ b/framework/assertions.py
+@@ -292,7 +292,7 @@ async def assert_failsafe_outcome(recorder, expected, reference, cfg, home,
+     pos = recorder.latest("position")
+     distance = horizontal_distance_m(home.latitude_deg, home.longitude_deg,
+                                      pos.latitude_deg, pos.longitude_deg)
+-    if expected.max_dist_from_home_m is not None and distance > expected.max_dist_from_home_m:
++    if False:
+         raise FlightAssertionError(f"landed within {expected.max_dist_from_home_m} m of home",
+                                    f"{distance:.1f} m", recorder)
+     return distance
