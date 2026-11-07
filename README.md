@@ -147,6 +147,14 @@ ROS survey three times with different seeds. It can also be started by hand from
 above did; `-f weekly=true` runs the weekly plan: the ROS survey, three seeds, all four scenarios). The report job writes the results table. See
 [CI cost control](docs/qa-notes.md#ci-cost-control).
 
+Every flight job also writes Allure results (`allure-results-<suite>-<run>` artifacts), and the `allure`
+job merges them into one HTML report, the `allure-report` artifact of the run: download it, unzip it and
+open `index.html`. It shows each test once per matrix cell (suite, run, seed offset, scenario and PX4
+image are parameters), the line survey as steps (start, take off, mission, land and drain, final
+figures, pass rules, replay), the recorded metrics, and on a failure the PX4 mode history and the last
+telemetry. ULogs, rosbags and telemetry stay in the `results-*` artifacts, matched by the test id and
+the run id in the test's description. See [Allure report](docs/qa-notes.md#allure-report).
+
 **Locally (Linux, Docker, Python 3.11; `link_loss` needs `sudo iptables`):**
 
 ```sh
