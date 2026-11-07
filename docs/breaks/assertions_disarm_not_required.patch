@@ -1,0 +1,19 @@
+Deliberate break: rule 5: the vehicle does not have to be disarmed (framework/assertions.py, failsafe pass rule).
+
+Expected: the unit tests go red: test_landed_but_still_armed_keeps_waiting in tests/unit/test_assertions.py.
+The flight tests are not expected to be needed for this: the rule is pure logic over the
+mode history, so the unit layer owns it.
+
+diff --git a/framework/assertions.py b/framework/assertions.py
+index 0752b49..b95185c 100644
+--- a/framework/assertions.py
++++ b/framework/assertions.py
+@@ -277,7 +277,7 @@ def failsafe_verdict(recorder, expected, reference, active_mode: str):
+     landed = recorder.latest("landed_state")
+     if expected.landed and (landed is None or landed.name != "ON_GROUND"):
+         return None
+-    if expected.disarmed and not disarmed:
++    if False:
+         return None
+     return True
+ 

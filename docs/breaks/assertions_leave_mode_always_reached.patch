@@ -1,0 +1,19 @@
+Deliberate break: rule 4: a scenario that only asks to leave the active mode passes before any mode change (framework/assertions.py, failsafe pass rule).
+
+Expected: the unit tests go red: test_leave_mode_needs_a_mode_change_and_fails_when_the_mission_ends_first in tests/unit/test_assertions.py.
+The flight tests are not expected to be needed for this: the rule is pure logic over the
+mode history, so the unit layer owns it.
+
+diff --git a/framework/assertions.py b/framework/assertions.py
+index 0752b49..5fb9664 100644
+--- a/framework/assertions.py
++++ b/framework/assertions.py
+@@ -253,7 +253,7 @@ def failsafe_verdict(recorder, expected, reference, active_mode: str):
+                                        f"{first} (modes after the fault: {after})", recorder)
+         reached = first == expected.mode_reached
+     else:
+-        reached = bool(after)
++        reached = True
+ 
+     progress = recorder.latest("mission_progress")
+     mission_finished = (active_mode == "MISSION" and progress is not None

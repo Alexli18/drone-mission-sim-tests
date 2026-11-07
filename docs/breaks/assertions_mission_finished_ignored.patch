@@ -1,0 +1,19 @@
+Deliberate break: rule 1: a mission that ends without any failsafe is no longer an error (framework/assertions.py, failsafe pass rule).
+
+Expected: the unit tests go red: test_mission_finished_without_failsafe_fails in tests/unit/test_assertions.py.
+The flight tests are not expected to be needed for this: the rule is pure logic over the
+mode history, so the unit layer owns it.
+
+diff --git a/framework/assertions.py b/framework/assertions.py
+index 0752b49..ba801f5 100644
+--- a/framework/assertions.py
++++ b/framework/assertions.py
+@@ -259,7 +259,7 @@ def failsafe_verdict(recorder, expected, reference, active_mode: str):
+     mission_finished = (active_mode == "MISSION" and progress is not None
+                         and progress.total > 0 and progress.current >= progress.total)
+     if not reached:
+-        if mission_finished:
++        if False:
+             raise FlightAssertionError("the failsafe fires during the mission",
+                                        "mission finished first (failsafe never fired)", recorder)
+         return None
