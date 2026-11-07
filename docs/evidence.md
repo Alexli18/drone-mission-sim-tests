@@ -97,3 +97,13 @@ Measured on `main` at `09a091c` unless noted. The figures are what the runs show
 | No capture lost, repeated or reordered between the sensor, the georeferencing node and the recordings | `capture_stream_failures` in `framework/survey.py`; unit tests with a missing, repeated, swapped and trailing id (a mutation that drops the missing-id search turns them red, checked locally); on CI (a branch run) [run 42374976630](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42374976630): 17 of 17 jobs, three seeds |
 | The expected values do not come from the code they judge | [docs/oracle-independence.md](oracle-independence.md): per rule, where the expected and measured values come from; coverage is checked against a grid-integration reference and the two line-projection implementations against each other (`tests/unit/test_survey.py`) |
 | One Allure report per run, matrix cells kept apart | pull-request [run 42379457810](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42379457810): artifact `allure-report`, 12 results, 0 retries (a test's identity includes suite, run, scenario, seed offset and the PX4 image) |
+
+### Local runs before CI (not CI evidence)
+
+Local evidence for the extension (Apple Silicon Mac, Docker Desktop, PX4 speed factor 4, effective 1.9; **not CI
+evidence**): the four `line_survey_*` scenarios passed in 3 of 3 repeats with different noise seeds, each in 23 s
+(47 s with the replay check); coverage 1.0 from both nodes, markers found 3 of 3 with errors up to 7 cm and no false
+marker (none on the clean line), height error 0.06 to 0.08 m, cross-track 0.17 to 0.25 m, line speed 0.97 to 0.99 m/s,
+clock shift +0.0195 m and -0.0195 m for +20 and -20 ms, sensor lag at most 0.07 s. With the lever-arm break applied the
+flight test fails with the markers 12 cm off (`docs/breaks/`). The earlier suites still pass locally (10 passed, the
+iptables-based `link_loss` skipped as documented).

@@ -2,6 +2,8 @@
 
 [![sim-tests](https://github.com/Alexli18/drone-mission-sim-tests/actions/workflows/sim-tests.yml/badge.svg?branch=main&event=push)](https://github.com/Alexli18/drone-mission-sim-tests/actions/workflows/sim-tests.yml?query=branch%3Amain+event%3Apush)
 
+The badge is the unit job on pushes to `main`. The flight suites run on pull requests, nightly and weekly; the last full run and the weekly pass rate are in [At a glance](#at-a-glance).
+
 Automated, simulation-based tests for drone missions. Each test starts a fresh
 PX4 autopilot in software-in-the-loop simulation (SITL) with the SIH physics
 model, headless and CPU-only on free GitHub Actions runners. Python tests
@@ -25,10 +27,13 @@ and [Testing practice](#testing-practice); its CI evidence, including what is no
     interpolation); sensor captures lost silently; verdicts that cannot fail (independent expected
     values, deliberate-break checks); and flakes that hide real defects. Per risk, what is tested, the
     pass rule and what is left: [docs/test-strategy.md](docs/test-strategy.md).
-*   **Latest full run:** every suite three times on `main` at `abfa411`, [run 42396195239](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396195239):
-    18 of 18 jobs green, 39 flight test results passed. The weekly line-survey plan on the same commit
-    (four scenarios, three seeds): [run 42397488794](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42397488794) passed 12 of 12, the one before it,
-    [run 42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449), 11 of 12; the failure is listed below.
+*   **Last full run:** every suite three times on `main`, [run 42396195239](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396195239) (commit `abfa411`,
+    7 Nov 2026): 18 of 18 jobs green, 39 flight test results passed. **Weekly line-survey plan** (4 scenarios
+    x 3 seeds = 12 tests per run) since the PX4-log rule was added: 13 runs, 10 without a failure. The 3 runs
+    with failures hit a stall of the georeferencing node (1 test, fixed) and the test bench (2 runs, 4 tests:
+    three at the start of `rosapi`, fixed; one loss of capture ids in the recordings, not explained). The last
+    3 runs, with both fixes, were clean (36 of 36), which is too few to call the flakes gone. Causes and run
+    ids: [docs/evidence.md](docs/evidence.md).
 *   **One defect, end to end:** the vehicle sometimes hovered 0.2 m low at the start of the survey line.
     Cause: the estimator's range-finder "stuck" detector kept the range finder out of the height estimate
     for up to 12 s after take-off in the simulation. Found from 68 flight logs, confirmed with a one-line
@@ -40,11 +45,7 @@ and [Testing practice](#testing-practice); its CI evidence, including what is no
 
 ## What is not stable
 
-Measured, not hidden.
-
-
-*   **Height over the line, limit ±0.15 m.** 2 of 51 measured flights exceeded it (0.191 and 0.172 m;
-    27 flights on `main` as it was and 24 on an experiment branch with a longer approach); the others
+*   **Height over the line, limit ±0.15 m.** 2 of 51 measured flights exceeded it (0.191 and 0.172 m); the others
     measured 0.044 to 0.115 m. The ULog shows the drop is real (the simulator's truth was 0.2 m low
     in the worst flight). The cause is found: the range finder's stuck detector delayed the
     range-finder fusion into the height estimate by up to 12 s after take-off. With the detector
@@ -53,8 +54,8 @@ Measured, not hidden.
     0.15 m. That is too few flights to call the flake fixed, so the limit stays (the georeferencing
     node's own height band is the same 0.15 m) and the weekly run keeps counting. Details and what
     the experiment does not show: [QA notes](docs/qa-notes.md#height-at-the-start-of-the-line).
-*   **Position of the second marker, limit 0.10 m.** The largest error in 48 flights recorded so far is
-    0.096 m, a margin of 4 mm. The limit stays: it is what catches a georeferencing that ignores the 15 cm sensor
+*   **Position of the second marker, limit 0.10 m.** The largest error in the 48 flights measured
+    for this check was 0.096 m, a margin of 4 mm. The limit stays: it is what catches a georeferencing that ignores the 15 cm sensor
     offset (`docs/breaks/`).
 *   **Captures wrongly marked `no_pose` after a stall of the georeferencing node (fixed).** In
     [run 42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449) the node stopped for 0.4 s twice; the captures that arrived meanwhile
@@ -133,9 +134,13 @@ follows one real defect from symptom to decision.
 *   **Flakes found and root-caused:** the DDS gotchas, pose loss from a small QoS queue, CPU
     saturation of a 2-vCPU runner (a lower speed factor for the ROS suite), a sensor node falling
     behind (a lag guard), a replay race on subscriber connect, a reactor-thread bug in the rosbridge
-    client and a race in the unit test's own fake server found under `pytest -n 2`. The latest:
+    client and a race in the unit test's own fake server found under `pytest -n 2`. The latest three:
     the late height fusion after take-off, traced to the simulated range finder tripping the
-    estimator's stuck detector ([QA notes](docs/qa-notes.md#height-at-the-start-of-the-line)).
+    estimator's stuck detector ([QA notes](docs/qa-notes.md#height-at-the-start-of-the-line)); a stall
+    of the georeferencing node that turned good poses into `no_pose`
+    ([QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose)); and
+    `rosapi` crashing when asked about a node it does not see yet
+    ([QA notes](docs/qa-notes.md#rosapi-dies-when-asked-about-a-node-it-does-not-see-yet)).
 *   **Measuring the truth, not only the estimate.** `spikes/line_hold_truth.py` projects the
     simulator's ground truth from the ULog on the line and compares it with what PX4 estimates, which
     is what the test sees.
@@ -145,19 +150,11 @@ follows one real defect from symptom to decision.
     docs-only changes ignored, a nightly run only if `main` changed, a weekly multi-seed pass-rate
     run, cancelled superseded pull-request runs, cached images and pip, `pytest-xdist`.
 
-Local evidence for the extension (Apple Silicon Mac, Docker Desktop, PX4 speed factor 4, effective 1.9; **not CI
-evidence**): the four `line_survey_*` scenarios passed in 3 of 3 repeats with different noise seeds, each in 23 s
-(47 s with the replay check); coverage 1.0 from both nodes, markers found 3 of 3 with errors up to 7 cm and no false
-marker (none on the clean line), height error 0.06 to 0.08 m, cross-track 0.17 to 0.25 m, line speed 0.97 to 0.99 m/s,
-clock shift +0.0195 m and -0.0195 m for +20 and -20 ms, sensor lag at most 0.07 s. With the lever-arm break applied the
-flight test fails with the markers 12 cm off (`docs/breaks/`). The earlier suites still pass locally (10 passed, the
-iptables-based `link_loss` skipped as documented).
-
 ## Pinned versions
 
 | Component | Pin |
 |---|---|
-| PX4 SITL image | `px4io/px4-sitl:v1.18.0-rc1@sha256:39d5a950…` (release candidate; see limitations), with its `px4` binary rebuilt from the same source plus the upstream lockstep fix (`px4-sitl-patched:39d5a950208a`) |
+| PX4 SITL image | `px4io/px4-sitl:v1.18.0-rc1@sha256:39d5a950…` (release candidate; see limitations), with its `px4` binary rebuilt from the same source plus two patches: the upstream lockstep fix (`lockstep_scheduler.patch`) and a simulation-only change that disables the range finder's stuck detector (`rng_stuck_detector.patch`, one line) (`px4-sitl-patched:39d5a950208a`) |
 | ROS (extension) | `ros:humble-ros-base` by digest, Micro XRCE-DDS Agent v2.4.3 by commit, `px4_msgs` by commit, `rosbridge_server`; `roslibpy==1.7.0` in the tests |
 | Vehicle | `sihsim_quadx` |
 | MAVSDK-Python | `mavsdk-grpc==4.0.5` |
@@ -284,5 +281,9 @@ not scenarios.
     synchronization. The toy sensor reads PX4's position *estimate*, so the end-to-end
     test checks the data path, not the estimator; the estimator is measured against
     ground truth by a separate spike.
-*   The patched PX4 image is a stopgap until the pinned PX4 release contains the
-    upstream fix; building it compiles PX4 and is slow on a cache miss.
+*   The patched PX4 image carries two patches. The lockstep fix is a stopgap until the pinned PX4
+    release contains the upstream fix; building the image compiles PX4 and is slow on a cache miss.
+    The stuck-detector patch changes the simulated autopilot's behaviour so that the simulated range
+    finder (which reports about 0 m on the ground) does not keep itself out of the height estimate; it
+    is not verified for a real range finder.
+*   This is a simulation suite. Nothing here is hardware-in-the-loop or a flight with a real vehicle.
