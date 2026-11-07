@@ -42,7 +42,7 @@ Measured on the runs above and written without softening.
     case and the lost ids. The control on `main` (2 runs) and the other four runs on the branch were
     clean (72 of 72). [qa-notes.md](qa-notes.md#rosapi-dies-when-asked-about-a-node-it-does-not-see-yet).
 *   The height rule, the marker margin and the `/rosapi/node_details` flake are in the README
-    section "What is not stable" and in [qa-notes.md](qa-notes.md).
+    section "Limitations and open issues" and in [qa-notes.md](qa-notes.md).
 
 ## Flight figures
 
