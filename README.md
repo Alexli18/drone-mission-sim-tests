@@ -13,6 +13,8 @@ scenarios as data, failure injection, and CI quality gates.
 
 **Status: milestones M1–M5 done.** This README claims only what CI shows. See the [design](docs/designs/drone_mission_sim_tests.md).
 
+**Start here:** [docs/test-strategy.md](docs/test-strategy.md) (what is tested and why, with one defect followed end to end), then [docs/evidence.md](docs/evidence.md) (each claim with its CI run, raw data and limit), then [At a glance](#at-a-glance) below.
+
 **Extension: a ROS 2 line survey.** A second suite flies a low survey line with a
 toy sensor on a ROS 2 pipeline fed by PX4 over uXRCE-DDS and checks the result end to end,
 plus the QA practice around it (a PX4 crash root-caused and patched, deliberate-break checks,
@@ -29,7 +31,7 @@ and [Testing practice](#testing-practice); its CI evidence, including what is no
     pass rule and what is left: [docs/test-strategy.md](docs/test-strategy.md).
 *   **Last full run:** every suite three times on `main`, [run 42396195239](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396195239) (commit `abfa411`,
     7 Nov 2026): 18 of 18 jobs green, 39 flight test results passed. **Weekly line-survey plan** (4 scenarios
-    x 3 seeds = 12 tests per run) since the PX4-log rule was added: 13 runs, 10 without a failure. The 3 runs
+    x 3 seeds = 12 tests per run) since the PX4-log rule was added (on `main` and on the branches that became `main`): 13 runs, 10 without a failure. The 3 runs
     with failures hit a stall of the georeferencing node (1 test, fixed) and the test bench (2 runs, 4 tests:
     three at the start of `rosapi`, fixed; one loss of capture ids in the recordings, not explained). The last
     3 runs, with both fixes, were clean (36 of 36), which is too few to call the flakes gone. Causes and run
@@ -43,34 +45,18 @@ and [Testing practice](#testing-practice); its CI evidence, including what is no
 *   **Every claim with its test, CI run, raw data and limit:** [docs/evidence.md](docs/evidence.md). The older,
     run-by-run tables are there too.
 
-## What is not stable
+<details>
+<summary>Terms used in this README</summary>
 
-*   **Height over the line, limit ±0.15 m.** 2 of 51 measured flights exceeded it (0.191 and 0.172 m); the others
-    measured 0.044 to 0.115 m. The ULog shows the drop is real (the simulator's truth was 0.2 m low
-    in the worst flight). The cause is found: the range finder's stuck detector delayed the
-    range-finder fusion into the height estimate by up to 12 s after take-off. With the detector
-    disabled in the simulation image, the fusion started 0.70 to 0.78 s after take-off in 24 of 24
-    flights (51 flights without the patch: median 1.84 s, maximum 12.2 s), and no flight went over
-    0.15 m. That is too few flights to call the flake fixed, so the limit stays (the georeferencing
-    node's own height band is the same 0.15 m) and the weekly run keeps counting. Details and what
-    the experiment does not show: [QA notes](docs/qa-notes.md#height-at-the-start-of-the-line).
-*   **Position of the second marker, limit 0.10 m.** The largest error in the 48 flights measured
-    for this check was 0.096 m, a margin of 4 mm. The limit stays: it is what catches a georeferencing that ignores the 15 cm sensor
-    offset (`docs/breaks/`).
-*   **Captures wrongly marked `no_pose` after a stall of the georeferencing node (fixed).** In
-    [run 42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449) the node stopped for 0.4 s twice; the captures that arrived meanwhile
-    were released in one burst, and 32 of them got `no_pose` although every pose had arrived (coverage
-    0.8631 against 0.95 in one test). The hold timeout now also needs wall time; a unit test models the
-    stall. The stalls are rare, so CI cannot confirm the fix by itself: 4 weekly runs after it showed no
-    `no_pose`. Details: [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
-*   **A test-bench flake before take-off (cause found, fix waiting for runs).** The first
-    `/rosapi/node_details` call got no reply within 30 s or "does not exist": once on
-    [run 42374481708](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42374481708) and three times in two consecutive weekly runs on a branch
-    ([42399318960](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42399318960), [42400058966](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42400058966)), with one loss of 15 capture ids in the
-    test's recordings. In two of them `rosapi` itself had crashed: ROS Humble's `rosapi` dies with a
-    `TypeError` when asked about a node it does not see yet, and the test asked 0.4 s after the start.
-    The test now waits until `rosapi` lists the nodes. Not explained: the third "does not exist" and the
-    lost ids. See [QA notes](docs/qa-notes.md#rosapi-dies-when-asked-about-a-node-it-does-not-see-yet).
+*   **SITL / SIH:** the PX4 autopilot software running on a computer, with a simple built-in physics model instead of a real vehicle.
+*   **ULog:** PX4's flight log; the tests read it after the flight.
+*   **Estimator (EKF):** the part of the autopilot that combines the sensors into the position and height it believes in. The tests compare that belief with the simulator's truth.
+*   **Range finder:** the downward distance sensor that gives the height above the ground.
+*   **Lever arm:** the offset of the payload sensor from the vehicle's reference point (15 cm here); a georeferencing that ignores it puts every marker 15 cm off.
+*   **Georeferencing:** placing each sensor capture on the survey line from the vehicle's pose at the capture time.
+*   **Fusion:** a sensor's data being used by the estimator.
+
+</details>
 
 ## Architecture
 
@@ -119,6 +105,25 @@ true-versus-estimated cross-track check from the ULog ([QA notes](docs/qa-notes.
 the bridge setup and its gotchas ([docs/ros-bridge.md](docs/ros-bridge.md)), about 200 new unit tests
 (georeferencing, the toy sensor and detector, the rosbridge client against a fake websocket
 server, replay helpers, the CI planner), and four scenarios (`scenarios/line_survey_*.yaml`).
+
+## What is not stable
+
+Causes, run ids and numbers: [docs/evidence.md](docs/evidence.md#what-is-not-stable).
+
+*   **Height over the line (limit ±0.15 m):** 2 of 51 measured flights went over (0.191 and 0.172 m). Cause
+    found: the simulated range finder tripped the estimator's stuck detector and stayed out of the height
+    estimate for up to 12 s after take-off; the detector is disabled in the simulation image and a rule watches
+    it. Too few flights since to call it fixed, so the limit stays.
+    [QA notes](docs/qa-notes.md#height-at-the-start-of-the-line).
+*   **Position of the second marker (limit 0.10 m):** the largest error measured was 0.096 m, a margin of 4 mm.
+    The limit stays: it is what catches a georeferencing that ignores the 15 cm lever arm (`docs/breaks/`).
+*   **A stall of the georeferencing node (fixed):** one weekly run lost 32 captures to `no_pose` although every
+    pose had arrived. The hold timeout now also needs wall time; a unit test models the stall, and the stalls are
+    too rare for CI alone to confirm it.
+    [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
+*   **Test-bench failures:** `rosapi` crashed when asked about a node it did not see yet (fixed, the test waits
+    for the node); 15 capture ids once went missing from the test's recordings (not explained).
+    [QA notes](docs/qa-notes.md#rosapi-dies-when-asked-about-a-node-it-does-not-see-yet).
 
 ## Testing practice
 
