@@ -218,6 +218,8 @@ key or a missing parameter. The full reference, with a failsafe example: [docs/s
 | [docs/limitations.md](docs/limitations.md) | The full list of limitations |
 | [docs/designs/](docs/designs/drone_mission_sim_tests.md) | The original design (milestones M1 to M5) |
 
+License: MIT, see [LICENSE](LICENSE).
+
 ## Pinned versions
 
 | Component | Pin |
