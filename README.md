@@ -31,10 +31,11 @@ and [Testing practice](#testing-practice); its CI evidence, including what is no
     pass rule and what is left: [docs/test-strategy.md](docs/test-strategy.md).
 *   **Last full run:** every suite three times on `main`, [run 42408748342](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42408748342) (commit `b5f9e42`,
     7 Nov 2026): 18 of 18 jobs green, 39 flight test results passed. **Weekly line-survey plan** (4 scenarios
-    x 3 seeds = 12 tests per run) since the PX4-log rule was added (on `main` and on the branches that became
-    `main`): 15 runs, 12 without a failure. The 3 runs with failures hit a stall of the georeferencing node
-    (1 test, fixed) and the test bench (2 runs, 4 tests: three at the start of `rosapi`, fixed; one loss of
-    capture ids in the recordings, not explained). The last 5 runs, with both fixes (the last two on
+    x 3 seeds = 12 tests per run), started by hand 15 times on 7 Nov 2026 since the PX4-log rule was added (on
+    `main` and on the branches that became `main`; the scheduled Monday run has not fired yet): 12 of the 15
+    runs without a failure. The 3 runs with failures hit a stall of the georeferencing node (1 test, fixed)
+    and the test bench (2 runs, 4 tests: two crashes of `rosapi` at the start, fixed; one "service does not
+    exist" and one loss of capture ids in the recordings, not explained). The last 5 runs, with both fixes (the last two on
     `b5f9e42`: [run 42409105205](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42409105205), [run 42409529152](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42409529152)), were clean (60 of 60), which is too few to call the flakes
     gone. Causes and run ids: [docs/evidence.md](docs/evidence.md).
 *   **One defect, end to end:** the vehicle sometimes hovered 0.2 m low at the start of the survey line.
@@ -137,7 +138,7 @@ Causes, run ids and numbers: [docs/evidence.md](docs/evidence.md#what-is-not-sta
     too rare for CI alone to confirm it.
     [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
 *   **Test-bench failures:** `rosapi` crashed when asked about a node it did not see yet (fixed, the test waits
-    for the node); 15 capture ids once went missing from the test's recordings (not explained).
+    for the node); one "service does not exist" and 15 capture ids that went missing from the test's recordings are not explained.
     [QA notes](docs/qa-notes.md#rosapi-dies-when-asked-about-a-node-it-does-not-see-yet).
 
 ## Testing practice
