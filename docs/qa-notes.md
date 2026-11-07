@@ -96,6 +96,47 @@ under test already publish, so the guard needs no instrumentation of either.
 The toy sensor is light enough that it never trips the guard; the guard is kept because
 the failure mode is generic, and `sensor_lag_s` is unit tested.
 
+## A stall of the georeferencing node turns into no_pose
+
+**Symptom.** In the weekly run [42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449), seed 3 job, `line_survey_clock_minus` failed the
+coverage rule: 0.8631 against 0.95, a gap of 0.87 m. 32 captures had the reason `no_pose`, in two
+bursts of 15 and 17 captures in the middle of the line; two other tests of the job lost 3 captures each,
+the fourth none. Two other weekly runs (24 flights) had no `no_pose` capture.
+
+**Not a lost pose.** PX4 published `vehicle_local_position` without a gap (the largest gap in the ULog
+is 12 ms). The node's own counters: `poses=1788 dropped=0 pose_gaps=0`, the largest pose interval
+24 ms. The sensor never fell behind (0.07 s). All 32 captures were released by the simulated-time
+hold timeout (`release: timeout`), none by a missing pose.
+
+**A stall, seen in the bag.** The bag records the wall time of every `/survey/capture` and of the
+`/survey/georef_capture` the node published for it. Normally the node publishes within a millisecond
+of the capture. In the flight, captures kept arriving every 10 to 20 ms while the node published nothing,
+and then released a whole batch within 30 ms; the latency of the batch falls linearly from 0.41 s to
+0. Six such stalls in the flight (0.09, 0.16, 0.20, 0.22, 0.41 and 0.42 s); the two long ones produced
+the `no_pose` captures, the shorter ones none.
+
+**Why a stall loses data.** A held capture is stamped with the node's "now" (the newest pose time) when
+it arrives, and released as `no_pose` once the pose clock has advanced `hold_timeout_s` (0.5 simulated
+seconds) beyond that stamp without covering the capture. After a stall, the captures are processed
+before the backlog of poses: they are stamped with a pose clock that is old, so a capture more than
+0.5 s ahead of it times out before its own pose is processed, although the pose is in the queue. With
+the real `HoldQueue` code and a stall of 1.5 simulated seconds (0.4 s of wall time at the speed
+factor 3.7), the first 10 captures are fine and the rest are `no_pose`/`timeout`; processed in time
+order, none is lost (a model run once, not yet a test in the repository; the flight shows 15 and 17 of 32 and 33).
+
+**What stalled it.** The stalls coincide with disk wait on the runner: the two long ones at
+17:36:07 and 17:36:08, the seconds with 13 % and 26 % wait in the job's `vmstat` (five tasks blocked
+in the first of them); the shorter stalls fall in seconds with 6 to 11 % wait, so the wait alone does not
+predict the length of a stall. The node writes
+`decisions.jsonl` (one `open` and `write` per released capture) and its log in the callback, on a
+runner whose disk was busy with PX4's log and the bag. That is a correlation, not a proof; a
+stall in the DDS transport would look the same from here.
+
+**Status.** Found, not fixed. The test did its job: it caught a node that loses good data when it is
+stalled. Options: a wall-clock guard on the simulated-time timeout (a capture is not timed out until it
+has been held for some wall time), no file writes in the callbacks, and a counter of stalls so that they
+are visible. Until then the weekly run is the measure: 1 of 24 flights failed on it.
+
 ## Replay race on subscriber connect
 
 See [ros-bridge.md](ros-bridge.md#replay-bag_player). In short: a fixed delay before

@@ -16,51 +16,32 @@ toy sensor on a ROS 2 pipeline fed by PX4 over uXRCE-DDS and checks the result e
 plus the QA practice around it (a PX4 crash root-caused and patched, deliberate-break checks,
 CI cost control). It is described in the sections [ROS 2 line survey](#ros-2-line-survey-extension)
 and [Testing practice](#testing-practice); its CI evidence, including what is not stable yet, is in
-[What CI verifies for the line survey](#what-ci-verifies-for-the-line-survey).
+[docs/evidence.md](docs/evidence.md) and [What is not stable](#what-is-not-stable).
 
-## What CI verifies today
+## At a glance
 
-| Check | Evidence |
-|---|---|
-| PX4 SITL boots headless in a pinned container and reaches "connected, GPS fix, home set" | `tests/test_smoke.py`, [run 41708569365](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41708569365): boot to ready 2.2 s |
-| Every baseline PX4 parameter is read back after boot with the value the test set | `assert_params` in [run 41708569365](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41708569365) |
-| The simulation runs at least half the requested ×10 speed | [run 41708569365](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41708569365): effective speed factor 8.7 |
-| The PX4 image comes from the Actions cache, not Docker Hub, in the test jobs | [run 41708569365](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41708569365): `Loaded image: px4-sitl-pinned:39d5a950208a` (at the time; the local tag is now `px4-sitl-patched`, see [Testing practice](#testing-practice)) |
-| Basic flight: arm, take off to 10 m, hover 10 simulated seconds within ±1 m, land, disarm, with no mode other than Ready/Takeoff/Hold/Land | `tests/test_basic_flight.py`, green on 5 consecutive manual runs with no retries: [1](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710667007), [2](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710677497), [3](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710688146), [4](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710698804), [5](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41710708798); max hover altitude error 0.37–0.68 m |
-| Survey mission from YAML: a 60 × 40 m lawnmower pattern (14 waypoints) is generated, uploaded and flown; every waypoint is passed within 3 m and the mission duration is inside its bounds | `tests/test_survey_mission.py` (parametrized over all `mission` scenarios), [run 41713216856](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41713216856): largest waypoint miss 1.05 m, duration 138.0 simulated s (bounds 113–242 s) |
-| GPS loss 60 simulated s into a 100 × 100 m survey (MAVSDK failure injection): the vehicle leaves Mission, lands and disarms | `test_failsafe[gps_loss]`, [run 41719048626](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41719048626): Land 5.6 s after the fault |
-| Data link loss at waypoint 3 (`iptables` drops test → PX4 traffic; telemetry keeps flowing): Return, landing near home, disarm | `test_failsafe[link_loss]`, [run 41719048626](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41719048626): Hold 95.2 s after the fault, Return 5 s later, landed 0.1 m from home |
-| RC loss at waypoint 3 (the MAVLink manual-control stream stops): Return, landing near home, disarm | `test_failsafe[rc_loss]`, [run 41719048626](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41719048626): Hold after 5.6 s, Return after 10.6 s, landed 0.7 m from home |
-| Low battery (fast simulated drain): Return at the critical level, then Land at the emergency level, disarm | `test_failsafe[low_battery]`, [run 41719048626](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41719048626): Hold 120.2 s after mission start, Return at 125.2 s, Land at 142.2 s |
-| Geofence breach (offboard push north out of an inclusion fence): Return, landing near home, disarm | `test_failsafe[geofence_breach]`, [run 41719048626](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41719048626): Hold 14.4 s after Offboard started, Return 5 s later, landed 0.4 m from home |
-| Every failsafe test also fails if a failsafe fires before the fault, if the mission finishes without one, or if the wrong mode comes first (for example Land instead of Return) | pass rule in `framework/assertions.py`, covered by `tests/unit/test_assertions.py` |
-| The quality gate: breaking a scenario turns the workflow red with a clear message | throwaway branch with the link loss failsafe disabled (`NAV_DLL_ACT: 0`), [run 41720870716](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41720870716): red, `expected: the failsafe fires during the mission \| actual: mission finished first (failsafe never fired)`; the other 4 failsafe tests passed |
-| A `report` job writes a results table (result, wall time, recorded metrics) to the run's job summary | `scripts/summarize.py`, [run 41720851144](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41720851144) |
-| Every simulator job stays far under the 30-minute job timeout (`timeout-minutes: 30` in the workflow) | [run 41720851144](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41720851144): whole workflow 2 min 56 s; longest job `failsafes` 2.2 min (5 flights), `survey` 0.8 min, `basic` 0.6 min, `unit` 0.3 min. |
-| More scenarios as YAML only: a 20 × 100 m corridor survey at 8 m/s, the lawnmower survey under a 5 m/s crosswind (`SIH_WIND_E`), and RC loss under the same crosswind | [run 41819419053](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41819419053), 3 runs each: corridor max waypoint miss 0.64–0.78 m, 86.8–88.8 simulated s (bounds 72–165); crosswind survey max miss 0.37–1.1 m, 148.6–151.4 s (about 12 s longer than without wind); RC loss under wind landed 0.1–0.9 m from home |
-| Pass rate with every suite run 3 times: 11 of 11 tests passed 3/3, no retries | manual 3× run (same matrix as the nightly run), [run 41819419053](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41819419053): 9 simulator jobs in parallel, whole workflow 3 min 3 s (an earlier 3× run with 8 tests: [run 41816091197](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41816091197)). Three runs show the tests are not obviously flaky; they do not measure a rare failure rate |
-| Config, scenario loading and validation, lawnmower geometry, coordinate conversion, failsafe pass rule, report generator | `tests/unit/` (40 tests when this table was written; the unit job of any CI run shows today's count, for example [run 42379859214](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42379859214) with 239) |
+*   **The risks it is built around:** a failsafe that does not fire (GPS, data link, remote control,
+    battery, geofence); sensor data placed in the wrong spot (clock offset, lever arm, pose
+    interpolation); sensor captures lost silently; verdicts that cannot fail (independent expected
+    values, deliberate-break checks); and flakes that hide real defects. Per risk, what is tested, the
+    pass rule and what is left: [docs/test-strategy.md](docs/test-strategy.md).
+*   **Latest full run:** every suite three times on `main` at `abfa411`, [run 42396195239](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396195239):
+    18 of 18 jobs green, 39 flight test results passed. The weekly line-survey plan on the same commit
+    (four scenarios, three seeds): [run 42397488794](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42397488794) passed 12 of 12, the one before it,
+    [run 42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449), 11 of 12; the failure is listed below.
+*   **One defect, end to end:** the vehicle sometimes hovered 0.2 m low at the start of the survey line.
+    Cause: the estimator's range-finder "stuck" detector kept the range finder out of the height estimate
+    for up to 12 s after take-off in the simulation. Found from 68 flight logs, confirmed with a one-line
+    change in the simulation image (24 flights, fusion within 0.8 s), now watched by a rule that reads the
+    PX4 log. [Case study](docs/test-strategy.md#one-defect-end-to-end-the-height-of-the-vehicle-at-the-start-of-the-line),
+    [figures](docs/qa-notes.md#height-at-the-start-of-the-line).
+*   **Every claim with its test, CI run, raw data and limit:** [docs/evidence.md](docs/evidence.md). The older,
+    run-by-run tables are there too.
 
-The open questions that blocked M1 were answered by spike experiments in CI
-([run 41707210020](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41707210020));
-the M4 fault mechanisms by spikes S5–S9
-([run 41714506246](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41714506246),
-[run 41715170080](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/41715170080)).
-The results are in the design's Open Questions section.
+## What is not stable
 
-## What CI verifies for the line survey
+Measured, not hidden.
 
-Measured on `main` at `09a091c` unless noted. The figures are what the runs show, including the failures.
-
-| Check | Evidence |
-|---|---|
-| End to end, four scenarios (markers, sensor clock +20 ms, clock -20 ms, a clean line) with three noise seeds each | `tests/test_line_survey.py`, [run 42376540886](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42376540886) (`gh workflow run sim-tests.yml -f weekly=true`): 12 of 12 passed, 71 to 75 s per job, 4 min 9 s for the workflow |
-| Every suite three times | [run 42376597214](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42376597214): the flight suites 33 of 33 passed; the line survey 5 of 6 (two scenarios, three seeds); the one failure is the height rule, see below |
-| No capture lost, repeated or reordered between the sensor, the georeferencing node and the recordings | `capture_stream_failures` in `framework/survey.py`; unit tests with a missing, repeated, swapped and trailing id (a mutation that drops the missing-id search turns them red, checked locally); on CI (a branch run) [run 42374976630](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42374976630): 17 of 17 jobs, three seeds |
-| The expected values do not come from the code they judge | [docs/oracle-independence.md](docs/oracle-independence.md): per rule, where the expected and measured values come from; coverage is checked against a grid-integration reference and the two line-projection implementations against each other (`tests/unit/test_survey.py`) |
-| One Allure report per run, matrix cells kept apart | pull-request [run 42379457810](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42379457810): artifact `allure-report`, 12 results, 0 retries (a test's identity includes suite, run, scenario, seed offset and the PX4 image) |
-
-**What is not stable (measured, not hidden).**
 
 *   **Height over the line, limit ±0.15 m.** 2 of 51 measured flights exceeded it (0.191 and 0.172 m;
     27 flights on `main` as it was and 24 on an experiment branch with a longer approach); the others
@@ -75,6 +56,12 @@ Measured on `main` at `09a091c` unless noted. The figures are what the runs show
 *   **Position of the second marker, limit 0.10 m.** The largest error in 48 flights recorded so far is
     0.096 m, a margin of 4 mm. The limit stays: it is what catches a georeferencing that ignores the 15 cm sensor
     offset (`docs/breaks/`).
+*   **Captures wrongly marked `no_pose` after a stall of the georeferencing node.** In
+    [run 42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449) the node stopped for 0.4 s twice; the captures that arrived meanwhile
+    were released in one burst, and 32 of them got `no_pose` although every pose had arrived; one test
+    (`line_survey_clock_minus`) fell to coverage 0.8631 against 0.95. The stalls coincide with disk
+    wait on the runner. The code under test turns a stall into data loss; it is not fixed yet.
+    Details: [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
 *   **A test-bench flake before take-off.** The `/rosapi/node_details` call got no reply within 30 s
     twice (once on [run 42374481708](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42374481708), which passed on rerun). It happens before the
     flight, so it says nothing about the vehicle.
@@ -112,7 +99,8 @@ What the end-to-end test checks (details in [docs/line-survey.md](docs/line-surv
 *   coverage of the line by usable captures is at least 95 %, measured from the sensor's own
     positions, and the georeferencing node's own figure agrees within 1 %;
 *   every painted marker is found within 10 cm, and no marker where none is painted;
-*   the flight holds height (+-15 cm), cross-track (30 cm) and speed (10 %);
+*   the flight holds height (+-15 cm), cross-track (30 cm) and speed (10 %), and the PX4 log shows
+    the range finder joined the height estimate within 3 s of take-off;
 *   with the sensor clock 20 ms ahead or behind PX4's, every georeferenced position shifts by
     speed x offset (within 1 cm);
 *   replaying the recorded bag into fresh nodes gives the same usable/unusable decisions from
