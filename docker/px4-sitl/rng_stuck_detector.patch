@@ -1,0 +1,13 @@
+diff --git a/src/modules/ekf2/EKF/aid_sources/range_finder/sensor_range_finder.hpp b/src/modules/ekf2/EKF/aid_sources/range_finder/sensor_range_finder.hpp
+index 0442614..2e930b9 100644
+--- a/src/modules/ekf2/EKF/aid_sources/range_finder/sensor_range_finder.hpp
++++ b/src/modules/ekf2/EKF/aid_sources/range_finder/sensor_range_finder.hpp
+@@ -142,7 +142,7 @@ private:
+ 	 * Stuck check
+ 	 */
+ 	bool _is_stuck{};
+-	float _stuck_threshold{0.1f};	///< minimum variation in range finder reading required to declare a range finder 'unstuck' when readings recommence after being out of range (m), set to zero to disable
++	float _stuck_threshold{0.f};	///< minimum variation in range finder reading required to declare a range finder 'unstuck' when readings recommence after being out of range (m), set to zero to disable
+ 	float _stuck_min_val{};		///< minimum value for new rng measurement when being stuck
+ 	float _stuck_max_val{};		///< maximum value for new rng measurement when being stuck
+ 
