@@ -224,3 +224,28 @@ on a miss; the report job runs whenever at least one test job ran, tolerates ski
 ones, and reads JUnit-only artifacts; scheduled times are off the hour, because GitHub
 delays or drops runs at the top of the hour; the actions are at their Node 24 majors.
 Scheduled workflows are disabled by GitHub after 60 days without repository activity.
+
+## Allure report
+
+The flight jobs (`sim`, `ros-survey`) run pytest with `--alluredir=allure-results` next to the JUnit
+output and upload that folder as `allure-results-<suite>-<run>` (`allure-results-ros-survey-<run>`),
+even after a failure. The `allure` job runs after them whenever one of them ran, downloads all
+`allure-results-*` artifacts into one folder and builds one report with Allure 3 (`allure@3.22.1`
+through `npx`; it needs Node 22.18 or newer, so the job sets up Node 24). The result is the
+`allure-report` artifact: a single `index.html`, no Pages and no hosting; the job summary links to it.
+A missing results artifact (a job that died early) only makes the report smaller.
+
+- Identity. Allure treats results with the same test name and parameters as retries of one test, and
+  the matrix runs the same tests in several cells. `framework/reporting.py` therefore adds the
+  parameters `suite`, `run`, `scenario`, `px4_image` (from `config.yaml`) and, for the ROS line
+  survey, `seed_offset`; `SIM_SUITE` and `SIM_RUN` come from the job's `env`. Recorded metrics are
+  attachments, never parameters: a value that changes between runs would make every run a new test.
+- Content. `test_line_survey` has one step per numbered stage, plus the replay check; the other flight
+  tests are one entry with the parameters. Each flight test gets a `recorded metrics` attachment (the
+  `record_property` values) and, when it fails with a recorder, the PX4 mode history and the last
+  telemetry snapshot.
+- Not in the report: ULog, rosbag, telemetry files. They are in `results-<suite>-<run>` under
+  `artifacts/`; the description of each Allure result gives the run id and the test id to look for.
+- Locally: `pytest -m sitl ... --alluredir=allure-results`, then `npx allure@3.22.1 generate
+  allure-results --config allurerc.mjs --output allure-report`. Without `--alluredir` the Allure plugin
+  writes nothing, so `pytest -m unit` is unchanged.
