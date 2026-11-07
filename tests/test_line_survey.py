@@ -39,7 +39,7 @@ from framework.mission import (
     load_scenario,
     to_mission_plan,
 )
-from framework.rosbridge import record_name, wait_for_topic
+from framework.rosbridge import record_name, wait_for_nodes, wait_for_topic
 from framework.sitl import ARTIFACTS, wait_armable
 from framework.survey import (
     capture_stream_failures,
@@ -81,6 +81,8 @@ def _params():
 
 async def assert_no_sim_subscriptions(rosbridge, cfg, when: str) -> None:
     """The nodes under test subscribe to no ``/sim/*`` topic (they must not see the truth)."""
+    # rosapi dies when asked about a node it does not see yet (docs/qa-notes.md).
+    await wait_for_nodes(rosbridge, CHECKED_NODES, cfg.timeouts_wall_s.node_discovery)
     for node in CHECKED_NODES:
         details = await rosbridge.call_service(
             "/rosapi/node_details", "rosapi_msgs/srv/NodeDetails", {"node": node},

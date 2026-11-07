@@ -211,6 +211,37 @@ class RosbridgeClient:
             self._ros = None
 
 
+async def wait_for_nodes(client: RosbridgeClient, nodes, timeout_s: float, poll_s: float = 0.5,
+                         call_timeout_s: float = 5.0) -> None:
+    """Wait until ``rosapi`` lists every node in ``nodes`` (full names, such as ``/name``).
+
+    ``/rosapi/node_details`` of a node that ``rosapi`` does not see yet kills the ``rosapi``
+    process (Humble: ``get_node_info`` returns ``None`` and the handler unpacks it), and
+    no ``/rosapi`` service answers after that. ``/rosapi/nodes`` only lists names and is
+    safe to call early; a call that fails because ``rosapi`` has not started is tried again.
+    """
+    deadline = time.monotonic() + timeout_s
+    listed: list[str] | None = None
+    error = "no call made"
+    while True:
+        try:
+            response = await client.call_service("/rosapi/nodes", "rosapi_msgs/srv/Nodes", {},
+                                                 call_timeout_s)
+            listed = sorted(response.get("nodes", []))
+            if all(node in listed for node in nodes):
+                return
+            error = "none"
+        except FlightAssertionError as exc:
+            error = str(exc).splitlines()[0]
+        if time.monotonic() >= deadline:
+            break
+        await asyncio.sleep(poll_s)
+    missing = [node for node in nodes if listed is None or node not in listed]
+    raise FlightAssertionError(
+        f"rosapi lists {', '.join(nodes)} within {timeout_s} s",
+        f"missing {missing}; listed {listed}; last error: {error}")
+
+
 async def wait_for_topic(client: RosbridgeClient, topic: str, predicate, timeout_s: float,
                          description: str) -> dict:
     """The first latest message of ``topic`` for which ``predicate`` holds."""

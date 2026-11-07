@@ -34,10 +34,13 @@ Measured on the runs above and written without softening.
     flights, no `no_pose`, coverage 1.0 in all. How it was found:
     [qa-notes.md](qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
 *   **Test bench, two weekly runs on the fix branch ([42399318960](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42399318960), [42400058966](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42400058966)): 4 of 24 tests
-    failed in rosbridge, not in the node.** `/rosapi/node_details` did not exist (1), gave no reply within
-    30 s (2), and 15 consecutive capture ids were missing from the test's recordings (1; rule 0 caught it,
-    the node had released 645 of 645). The control on `main` (2 runs) and the other four runs on the branch
-    were clean (72 of 72). Cause not found.
+    failed in rosbridge, not in the node.** `/rosapi/node_details` did not exist (1) or gave no reply
+    within 30 s (2); 15 consecutive capture ids were missing from the test's recordings (1; rule 0 caught
+    it, the node had released 645 of 645). The two "no reply" jobs have the crash of `rosapi` in the log
+    (a `TypeError` on a node it does not see yet, an upstream bug in Humble; the test asked 0.4 s after
+    the start). The test now waits until `rosapi` lists the nodes. Not explained: the "does not exist"
+    case and the lost ids. The control on `main` (2 runs) and the other four runs on the branch were
+    clean (72 of 72). [qa-notes.md](qa-notes.md#rosapi-dies-when-asked-about-a-node-it-does-not-see-yet).
 *   The height rule, the marker margin and the `/rosapi/node_details` flake are in the README
     section "What is not stable" and in [qa-notes.md](qa-notes.md).
 

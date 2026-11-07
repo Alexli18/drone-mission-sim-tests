@@ -62,12 +62,14 @@ Measured, not hidden.
     0.8631 against 0.95 in one test). The hold timeout now also needs wall time; a unit test models the
     stall. The stalls are rare, so CI cannot confirm the fix by itself: 4 weekly runs after it showed no
     `no_pose`. Details: [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
-*   **A test-bench flake before take-off.** The `/rosapi/node_details` call got no reply within 30 s
-    or did not exist yet: once on [run 42374481708](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42374481708), which passed on rerun, and three times
-    in two consecutive weekly runs on the fix branch ([42399318960](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42399318960),
-    [42400058966](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42400058966)), together with one loss of 15 capture ids in the test's recordings;
-    the other six weekly runs of that period were clean. It happens in the bench (rosbridge), not in the vehicle or the
-    node. Not explained; see [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
+*   **A test-bench flake before take-off (cause found, fix waiting for runs).** The first
+    `/rosapi/node_details` call got no reply within 30 s or "does not exist": once on
+    [run 42374481708](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42374481708) and three times in two consecutive weekly runs on a branch
+    ([42399318960](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42399318960), [42400058966](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42400058966)), with one loss of 15 capture ids in the
+    test's recordings. In two of them `rosapi` itself had crashed: ROS Humble's `rosapi` dies with a
+    `TypeError` when asked about a node it does not see yet, and the test asked 0.4 s after the start.
+    The test now waits until `rosapi` lists the nodes. Not explained: the third "does not exist" and the
+    lost ids. See [QA notes](docs/qa-notes.md#rosapi-dies-when-asked-about-a-node-it-does-not-see-yet).
 
 ## Architecture
 

@@ -95,6 +95,7 @@ class Timeouts:
     ros_start: float
     rosbridge_connect: float
     first_dds_position: float
+    node_discovery: float
     sensor_drain: float
     finalize: float
     replay: float

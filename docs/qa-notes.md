@@ -74,9 +74,44 @@ stay at 10. The `vmstat` log and the effective speed factor (recorded per test) 
 evidence to look at before touching any timeout. The same family showed up once
 locally when another job was using the machine: the first `/rosapi/node_details` call
 timed out after 30 s (rosbridge serves service calls on its main thread by default, so
-it is the first thing that stops answering). A repeat on an idle machine passed; the call
-keeps its hard timeout rather than a retry, because a retry would hide exactly the
-condition the load check is there to show.
+it is the first thing that stops answering). A repeat on an idle machine passed. That
+explanation was incomplete: see "rosapi dies when asked about a node it does not see
+yet" below, which is what the later failures of this call were.
+
+## rosapi dies when asked about a node it does not see yet
+
+**Symptom.** The first service call of a line-survey test, `/rosapi/node_details`, got no reply
+within 30 s (twice on [42400058966](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42400058966), once earlier on [42374481708](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42374481708)) or
+failed with "Service /rosapi/node_details does not exist" ([42399318960](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42399318960)). Before the flight, so
+nothing to do with the vehicle; a retry on an idle machine passed.
+
+**What the log shows.** In both "no reply" jobs of [42400058966](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42400058966) the ROS log of the test holds
+a traceback of the `rosapi` node, `TypeError: cannot unpack non-iterable NoneType object` in
+`get_node_details`, followed by `[rosapi_node-3]: process has died ... exit code 1`. After that no
+`/rosapi` service exists, so the test waits its 30 s.
+
+**Why.** In ROS 2 Humble (checked in the public source of `rosbridge_suite`, branch `humble`;
+the installed file differs by two lines) `get_node_details` unpacks the result of
+`proxy.get_node_info(name)`, and that returns `None` when the node is not in the graph that
+`rosapi` sees. The exception is not caught, the executor stops and the process exits. The test asked
+0.4 s after the launch started, right after "SURVEY READY", which waits for poses, not for the
+graph: on a slow runner the discovery of the two nodes under test comes later than that. So it is a
+race between the start of the nodes and the first question, and a crash of `rosapi` that no retry
+can survive (the process is gone). It also explains why the earlier explanation, load, fitted: load
+widens the race.
+
+**The third failure is not explained.** The "does not exist" job of [42399318960](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42399318960) has no
+traceback in its log; the likeliest reading is that `rosapi` had not advertised its services yet
+when the call came, but that is not confirmed.
+
+**Fix.** Before the first `node_details` call the test waits until `/rosapi/nodes` lists both
+nodes (`wait_for_nodes` in `framework/rosbridge.py`, `timeouts_wall_s.node_discovery`, 30 s). That call
+only lists names and is safe early; a call that fails because `rosapi` has not started is tried again.
+The question itself, and the rule that the nodes subscribe to no `/sim/*` topic, are unchanged. If a
+node never appears, the test fails with the nodes it was waiting for and the ones listed, instead of
+30 s of silence. This is waiting for the precondition of the check, not retrying the check. Five unit
+tests with a scripted fake `rosapi` (the nodes appear late, `rosapi` not started, a node that never
+appears, `rosapi` that never answers); making the wait accept at once turns two of them red.
 
 ## The sensor node falling behind
 
