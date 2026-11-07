@@ -332,6 +332,8 @@ those 51 flights fails 6 of them, so a return of the late fusion shows as a red 
 cause named, not only as a height error. The patch is a property of the simulation image; whether a real range
 finder arms the detector in the same way is not tested here.
 
+Reported upstream: [PX4 issue 29687](https://github.com/PX4/PX4-Autopilot/issues/29687) asks whether the late fusion in SIH is expected and where it should be fixed (SIH, EKF2 or a documented limitation), and notes that `cs_rng_stuck` is never set in the EKF sources of this tag, so the log cannot show the detector's state. No fix has been sent to PX4; this repository's patch only disables the detector in the simulation image.
+
 ## Deliberate-break checks
 
 A test suite that has never been seen to fail proves little. `docs/breaks/` holds
