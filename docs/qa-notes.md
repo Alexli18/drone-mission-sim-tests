@@ -213,7 +213,7 @@ with throw-away git repositories in `tests/unit/test_ci_plan.py`):
 | Documentation-only change (`*.md`, `docs/designs`, `docs/research`) | Nothing (`paths-ignore`); the deliberate-break patches are code and not ignored |
 | Nightly | Everything, but only if `main` had a commit in the last 24 hours |
 | Weekly | The ROS survey three times with different seeds, plus the weekly-only scenarios: a pass rate, not a single result |
-| Manual dispatch | Everything; `runs=3` runs every suite three times |
+| Manual dispatch | Every suite and every ROS scenario except the weekly-only ones; `runs=3` runs every suite three times; `weekly=true` runs the weekly plan instead (the ROS survey, three seeds, every scenario) |
 
 Also: a new push to a pull request cancels the older run (`concurrency`,
 `cancel-in-progress` for pull requests only; scheduled and manual runs are never

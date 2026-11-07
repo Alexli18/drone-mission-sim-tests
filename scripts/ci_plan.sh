@@ -10,7 +10,10 @@
 # ROS_PATHS; docs/qa-notes.md, "CI cost control"), and every ROS scenario only
 # with the full-ci label (FULL_LABEL=true).
 #
-# Usage: ci_plan.sh EVENT_NAME BASE_SHA SCHEDULE FULL_LABEL
+# Manual dispatch runs everything but the weekly-only scenarios; with DISPATCH_WEEKLY=true it
+# runs the weekly plan instead (the ROS survey, three seeds, every scenario).
+#
+# Usage: ci_plan.sh EVENT_NAME BASE_SHA SCHEDULE FULL_LABEL [DISPATCH_WEEKLY]
 set -euo pipefail
 
 # Inputs of the flight-test jobs. Conservative: every scenario, every framework file.
@@ -20,8 +23,8 @@ ROS_PATHS='^(ros2_ws/|framework/|tests/|scenarios/|scripts/|docker/|config\.yaml
 NIGHTLY='17 2 * * *'
 WEEKLY='41 4 * * 1'
 
-[[ $# -eq 4 ]] || { sed -n '13p' "$0" >&2; exit 2; }
-event="$1" base="$2" schedule="$3" label="$4"
+[[ $# -eq 4 || $# -eq 5 ]] || { grep -m1 '^# Usage' "$0" >&2; exit 2; }
+event="$1" base="$2" schedule="$3" label="$4" dispatch_weekly="${5:-false}"
 
 plan() { printf 'run=%s\nsim=%s\nros=%s\nfull=%s\nweekly=%s\n' "$@"; }
 
@@ -54,7 +57,11 @@ case "$event" in
     fi
     ;;
   *)
-    # workflow_dispatch: everything except the weekly-only scenarios.
-    plan true true true true false
+    # workflow_dispatch: everything except the weekly-only scenarios, or the weekly plan.
+    if [[ "$dispatch_weekly" == true ]]; then
+      plan true false true true true
+    else
+      plan true true true true false
+    fi
     ;;
 esac
