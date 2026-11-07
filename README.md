@@ -144,7 +144,7 @@ changes (all of them with the `full-ci` label); documentation-only changes run n
 schedule runs every suite only if `main` changed in the last 24 hours, and a weekly one runs the
 ROS survey three times with different seeds. It can also be started by hand from the Actions tab
 (`gh workflow run sim-tests.yml -f runs=3` runs every suite 3 times, as the pass-rate evidence
-above did). The report job writes the results table. See
+above did; `-f weekly=true` runs the weekly plan: the ROS survey, three seeds, all four scenarios). The report job writes the results table. See
 [CI cost control](docs/qa-notes.md#ci-cost-control).
 
 **Locally (Linux, Docker, Python 3.11; `link_loss` needs `sudo iptables`):**

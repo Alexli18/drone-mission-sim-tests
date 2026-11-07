@@ -43,9 +43,10 @@ def make_repo(tmp_path: Path, changed: list[str], commit_date: str | None = None
     return base
 
 
-def plan(repo: Path, event: str, base: str = "", schedule: str = "", label: str = "false"):
-    out = subprocess.run([str(SCRIPT), event, base, schedule, label], cwd=repo, check=True,
-                         capture_output=True, text=True).stdout
+def plan(repo: Path, event: str, base: str = "", schedule: str = "", label: str = "false",
+         *extra: str):
+    out = subprocess.run([str(SCRIPT), event, base, schedule, label, *extra], cwd=repo,
+                         check=True, capture_output=True, text=True).stdout
     return dict(line.split("=") for line in out.split())
 
 
@@ -111,6 +112,25 @@ def test_unknown_schedule_is_an_error(tmp_path):
 def test_manual_dispatch_runs_everything(tmp_path):
     make_repo(tmp_path, ["README.txt"])
     assert set(decided(plan(tmp_path, "workflow_dispatch"))) == {"run", "sim", "ros", "full"}
+
+
+def test_manual_dispatch_leaves_out_the_weekly_extras_unless_asked(tmp_path):
+    make_repo(tmp_path, ["README.txt"])
+    assert "weekly" not in decided(plan(tmp_path, "workflow_dispatch", "", "", "false", "false"))
+    assert "weekly" not in decided(plan(tmp_path, "workflow_dispatch", "", "", "false", ""))
+
+
+def test_manual_dispatch_with_weekly_runs_the_weekly_plan(tmp_path):
+    make_repo(tmp_path, ["README.txt"])
+    weekly = plan(tmp_path, "workflow_dispatch", "", "", "false", "true")
+    assert weekly == plan(tmp_path, "schedule", schedule=WEEKLY)
+    assert set(decided(weekly)) == {"run", "ros", "full", "weekly"}
+
+
+def test_the_workflow_passes_the_weekly_input_to_the_planner():
+    text = (REPO_ROOT / ".github" / "workflows" / "sim-tests.yml").read_text()
+    assert "weekly:\n        description:" in text and "type: boolean" in text
+    assert '"${{ inputs.weekly || false }}"' in text
 
 
 def test_the_cron_strings_match_the_workflow():
