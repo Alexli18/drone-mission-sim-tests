@@ -30,16 +30,19 @@ explained in [Terms](#terms).
 Two of the four line-survey scenarios run on every pull request and all four run weekly, so a run of every suite
 three times has 13 flight tests x 3 = 39 results; all 15 flight tests exist.
 
-*   **Verified in CI:** on 7 Nov 2026 (`main` at `b5f9e42`) every suite ran three times in [CI run 42408748342](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42408748342),
-    and all 18 CI jobs passed, including 39 of 39 flight-test results. The weekly line-survey plan (12 tests per run)
-    was started by hand 15 times that day: 12 runs had no failure, and the last 5 runs, made after the fixes, passed 60 of
-    60 tests. The 3 runs with failures are explained under [Limitations and open issues](#limitations-and-open-issues).
-*   **Not verified:** anything on hardware (there is no hardware-in-the-loop), real sensors (SIH is simplified and the
-    sensors are simulated), the estimator against ground truth inside CI, and PX4 versions other than the pinned release
-    candidate v1.18.0-rc1.
-*   **Read next:** [docs/test-strategy.md](docs/test-strategy.md) (what is tested and why), then
-    [docs/evidence.md](docs/evidence.md) (every claim with its CI run, raw data and limit). All documents are listed in
-    [Documentation](#documentation).
+**Verified in CI.** On 7 Nov 2026 (`main` at `b5f9e42`) every suite ran three times in [CI run 42408748342](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42408748342),
+and all 18 CI jobs passed, including 39 of 39 flight-test results. The weekly line-survey plan (12 tests per run)
+was started by hand 15 times that day: 12 runs had no failure, and the last 5 runs, made after the fixes, passed 60 of
+60 tests. The 3 runs with failures are explained under [Limitations and open issues](#limitations-and-open-issues).
+
+> [!NOTE]
+> **Not verified:** anything on hardware (there is no hardware-in-the-loop), real sensors (SIH is simplified and the
+> sensors are simulated), the estimator against ground truth inside CI, and PX4 versions other than the pinned release
+> candidate v1.18.0-rc1.
+
+**Read next:** [docs/test-strategy.md](docs/test-strategy.md) (what is tested and why), then
+[docs/evidence.md](docs/evidence.md) (every claim with its CI run, raw data and limit). All documents are listed in
+[Documentation](#documentation).
 
 ## Try it
 
