@@ -337,7 +337,7 @@ finder arms the detector in the same way is not tested here.
 A test suite that has never been seen to fail proves little. `docs/breaks/` holds
 patches that each break one thing the suite claims to guard; `scripts/check_breaks.sh`
 applies every patch to a clean copy of the repository and requires the unit tests to go
-red (and, first, green without the patch).
+red (and, first, green without the patch). The script runs in the `unit` job of every CI run.
 
 | Patch | Breaks | Caught by |
 |---|---|---|
