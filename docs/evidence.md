@@ -26,17 +26,14 @@ The reasoning behind the tests is in [test-strategy.md](test-strategy.md), the d
 
 Measured on the runs above and written without softening.
 
-*   **Line survey, weekly run [run 42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449), seed 3 job, `line_survey_clock_minus`: coverage
-    0.8631 against 0.95.** 32 captures got the reason `no_pose` in two bursts of 15 and 17
-    captures in the middle of the line (about 0.8 simulated seconds each, a gap of 0.87 m). Three
-    of the four tests of that job lost captures to it (32, 3 and 3), the other nine tests of the
-    run none. PX4 published its position without a gap (the largest gap in the ULog is 12 ms) and
-    the sensor was not behind (0.07 s at most), so the loss happened somewhere between PX4's output
-    and the pose queue of the georeferencing node, not in PX4. The job's `vmstat` log covers only
-    88 s and shows 62 % idle on average; it neither shows nor excludes a CPU spike during the
-    bursts. The cause is not found. Two other weekly runs (24 flights) had no `no_pose` capture at all. In the
-    later one, `line_survey_clock_minus` of the seed 3 job still reached only coverage 0.9681 against 0.95
-    without any `no_pose`; that margin is not explained.
+*   **Line survey, weekly run [42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449), seed 3 job, `line_survey_clock_minus`: coverage
+    0.8631 against 0.95.** Cause found, not fixed. The georeferencing node stopped twice for about 0.4 s;
+    the captures that arrived meanwhile were released in one burst and 32 of them got `no_pose` although
+    every pose had arrived (no pose gap, no dropped pose, PX4 published without a gap). The stalls
+    coincide with disk wait on the runner (`vmstat`: 13 % and 26 % wait in those two seconds). Two other
+    weekly runs (24 flights) had no `no_pose` capture at all; in the later one, `line_survey_clock_minus`
+    of the seed 3 job still reached only coverage 0.9681 against 0.95 without any `no_pose`, which is not
+    explained. How it was found: [qa-notes.md](qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
 *   The height rule, the marker margin and the `/rosapi/node_details` flake are in the README
     section "What is not stable" and in [qa-notes.md](qa-notes.md).
 

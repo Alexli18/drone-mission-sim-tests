@@ -56,11 +56,12 @@ Measured, not hidden.
 *   **Position of the second marker, limit 0.10 m.** The largest error in 48 flights recorded so far is
     0.096 m, a margin of 4 mm. The limit stays: it is what catches a georeferencing that ignores the 15 cm sensor
     offset (`docs/breaks/`).
-*   **Lost poses in one weekly run.** In [run 42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449) one job lost 32, 3 and 3
-    captures to `no_pose` in three of its four tests; one test (`line_survey_clock_minus`) fell to
-    coverage 0.8631 against 0.95. PX4 published without a gap and the sensor was not behind, so the loss
-    is between PX4's output and the georeferencing node. Cause not found; details in
-    [docs/evidence.md](docs/evidence.md#what-is-not-stable).
+*   **Captures wrongly marked `no_pose` after a stall of the georeferencing node.** In
+    [run 42396898449](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396898449) the node stopped for 0.4 s twice; the captures that arrived meanwhile
+    were released in one burst, and 32 of them got `no_pose` although every pose had arrived; one test
+    (`line_survey_clock_minus`) fell to coverage 0.8631 against 0.95. The stalls coincide with disk
+    wait on the runner. The code under test turns a stall into data loss; it is not fixed yet.
+    Details: [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
 *   **A test-bench flake before take-off.** The `/rosapi/node_details` call got no reply within 30 s
     twice (once on [run 42374481708](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42374481708), which passed on rerun). It happens before the
     flight, so it says nothing about the vehicle.
