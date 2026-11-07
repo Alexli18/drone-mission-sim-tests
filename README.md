@@ -128,6 +128,10 @@ server, replay helpers, the CI planner), and four scenarios (`scenarios/line_sur
 
 ## Testing practice
 
+[docs/test-strategy.md](docs/test-strategy.md) says per risk what is tested, what makes a test pass
+or fail, where the truth comes from and what is not covered (including a risk with no test yet), and
+follows one real defect from symptom to decision.
+
 [docs/qa-notes.md](docs/qa-notes.md) is the running list of what broke and how it is guarded:
 
 *   **A flaky crash with a root cause upstream.** PX4 v1.18.0-rc1 aborted in its lockstep scheduler
