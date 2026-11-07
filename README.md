@@ -63,11 +63,15 @@ Measured on `main` at `09a091c` unless noted. The figures are what the runs show
 **What is not stable (measured, not hidden).**
 
 *   **Height over the line, limit ±0.15 m.** 2 of 51 measured flights exceeded it (0.191 and 0.172 m;
-    27 flights on `main` as it is and 24 on an experiment branch with a longer approach); the others
-    measured 0.044 to 0.115 m. The ULog shows the drop is real (the
-    simulator's truth was 0.2 m low in the worst flight) and that the vehicle often hovers at 0.2 to
-    0.3 m for seconds after take-off. The cause is under investigation and the limit stays, because
-    the georeferencing node's own height band is the same 0.15 m.
+    27 flights on `main` as it was and 24 on an experiment branch with a longer approach); the others
+    measured 0.044 to 0.115 m. The ULog shows the drop is real (the simulator's truth was 0.2 m low
+    in the worst flight). The cause is found: the range finder's stuck detector delayed the
+    range-finder fusion into the height estimate by up to 12 s after take-off. With the detector
+    disabled in the simulation image, the fusion started 0.70 to 0.78 s after take-off in 24 of 24
+    flights (51 flights without the patch: median 1.84 s, maximum 12.2 s), and no flight went over
+    0.15 m. That is too few flights to call the flake fixed, so the limit stays (the georeferencing
+    node's own height band is the same 0.15 m) and the weekly run keeps counting. Details and what
+    the experiment does not show: [QA notes](docs/qa-notes.md#height-at-the-start-of-the-line).
 *   **Position of the second marker, limit 0.10 m.** The largest error in 48 flights recorded so far is
     0.096 m, a margin of 4 mm. The limit stays: it is what catches a georeferencing that ignores the 15 cm sensor
     offset (`docs/breaks/`).
@@ -132,7 +136,9 @@ server, replay helpers, the CI planner), and four scenarios (`scenarios/line_sur
 *   **Flakes found and root-caused:** the DDS gotchas, pose loss from a small QoS queue, CPU
     saturation of a 2-vCPU runner (a lower speed factor for the ROS suite), a sensor node falling
     behind (a lag guard), a replay race on subscriber connect, a reactor-thread bug in the rosbridge
-    client and a race in the unit test's own fake server found under `pytest -n 2`.
+    client and a race in the unit test's own fake server found under `pytest -n 2`. The latest:
+    the late height fusion after take-off, traced to the simulated range finder tripping the
+    estimator's stuck detector ([QA notes](docs/qa-notes.md#height-at-the-start-of-the-line)).
 *   **Measuring the truth, not only the estimate.** `spikes/line_hold_truth.py` projects the
     simulator's ground truth from the ULog on the line and compares it with what PX4 estimates, which
     is what the test sees.
