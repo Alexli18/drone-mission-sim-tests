@@ -175,6 +175,46 @@ estimated position, the node under test georeferences with the estimated pose): 
 tests the chain, not the estimator, and the chain's result is then exact enough to
 check clock offsets to a centimetre.
 
+### Height at the start of the line
+
+Two of 51 line-survey flights went over the 0.15 m height limit (0.191 and 0.172 m); the
+other 49 measured 0.044 to 0.115 m. The test's number can be rebuilt from the ULog alone
+(`vehicle_global_position` minus `home_position`; it matched the junit value to 0.01 m in all
+51 flights), and the drop is real: in the worst flight the simulator's truth was 0.2 m low.
+
+What the logs of 68 flights show. After lift-off the vehicle often hovers at 0.2 to 0.3 m, not
+at the commanded 0.4 m, for seconds (the median truth height over the first 10 s is 0.33 m).
+The test starts the mission as soon as the height reaches 0.25 m (0.4 minus the 0.15 m
+limit), about 1 s after lift-off. Until the range finder is fused into the height estimate,
+the estimate rests on the barometer. The fusion starts 2.0 s after lift-off in the median
+(90th percentile 11.6 s, maximum 12.2 s), even though the range readings are correct and the
+estimator does not reject them (`innovation_rejected` 0, test ratio near 0,
+`cs_rng_kin_consistent` 1). The longer the fusion is missing, the lower the vehicle hovers
+(Spearman -0.76, n = 68). The profile sets `EKF2_RNG_CTRL 2`, which PX4 v1.18.0-rc1 defines
+as range aiding always on, so the speed limit `EKF2_RNG_A_VMAX` does not apply, and no
+flight lost the fusion at speed.
+
+Probable cause, established indirectly. The range finder's "stuck" detector
+(`sensor_range_finder.cpp`, `updateStuckCheck`) is armed when no valid sample was seen for
+10 s, and releases only when the readings vary by 0.1 m. The simulated sensor reports about
+0 m with quality 0 on the ground, so after take-off the detector starts armed; a vehicle
+hovering steadily at 0.25 m, low because the barometer is biased, produces no 0.1 m of
+variation and stays stuck, until it moves vertically (for instance when the mission
+starts). An offline model of that logic, written from the source, predicted the time the
+fusion started to within 0.13 to 0.20 s in 68 of 68 flights. It is not confirmed by the PX4
+log: `_is_stuck` is not logged, and the flag `cs_rng_stuck` is never set in this version.
+With a real sensor the detector would normally not be armed (not verified here).
+
+Experiments so far, all on CI. Starting the line 9 m from home instead of 5 m lowered the
+median error (0.070 against 0.083 m) but not the outliers. Hovering 10 s after take-off
+before the mission gave 0.064 to 0.079 m in 17 flights, but the fusion still started after
+the end of the hover in 7 of them, and the shifted flight path pushed the position of the
+second marker over its 0.10 m limit in several flights (that rule had a margin of 4 mm to
+begin with). This change patches the stuck detector's threshold to 0 in the simulation
+image (`docker/px4-sitl/rng_stuck_detector.patch`) to test the cause directly: if it is
+right, the fusion starts about 1 s after lift-off in every flight and the outliers
+disappear.
+
 ## Deliberate-break checks
 
 A test suite that has never been seen to fail proves little. `docs/breaks/` holds
