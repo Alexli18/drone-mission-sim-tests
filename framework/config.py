@@ -149,6 +149,7 @@ class PassRules:
     acceptance_radius_m: float
     run_m: float
     sensor_lag_max_s: float
+    rng_fusion_max_s: float
 
 
 @dataclass(frozen=True)

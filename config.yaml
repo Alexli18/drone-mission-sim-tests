@@ -50,6 +50,7 @@ survey:                        # the line-survey test (docs/line-survey.md)
     acceptance_radius_m: 0.5
     run_m: 2.0
     sensor_lag_max_s: 5.0      # simulated seconds the sensor may trail the newest pose
+    rng_fusion_max_s: 3.0      # the range finder is fused into the height estimate this long after lift-off at most (ULog)
 telemetry_wall_hz:             # target wall-clock rates (divided by speed_factor for PX4)
   position: 50
   other: 10

@@ -93,7 +93,8 @@ px4_params: {UXRCE_DDS_SYNCT: 0}
 3. Land, call `/survey/stop`, wait until the last capture is georeferenced and the queue
    is empty, call `/markers/finalize`, check `rosapi` again.
 4. Compute the figures from the two recordings (the sensor's true positions and the
-   georeferenced captures) and from MAVSDK telemetry.
+   georeferenced captures), from MAVSDK telemetry and from the PX4 log (when the range
+   finder joined the height estimate).
 5. Check every rule below and report all failures in one assertion.
 6. If `replay_check`: stop the live container, replay the bag into fresh nodes, compare.
 
@@ -101,6 +102,7 @@ px4_params: {UXRCE_DDS_SYNCT: 0}
 |---|---|
 | Coverage of the line by usable captures is at least 0.95 (gaps up to 1.5 capture spacings are allowed), measured from the sensor's own positions; the georeferencing node's coverage agrees within 0.01; no usable capture was built without a pose | `framework.survey.truth_figures` |
 | Flight: height within 0.4 +- 0.15 m, cross-track within 0.3 m, line speed within 10 % of 1 m/s, over the line only | MAVSDK telemetry, `framework/assertions.py` |
+| Range finder: fused into the height estimate within 3 s of take-off (the log shows 0.70 to 0.78 s with the detector patch, up to 12 s without it) | The PX4 log (ULog) after the flight, `framework/ulog_checks.py`; a missing or unreadable log fails |
 | Every painted marker found within 0.10 m of its position; no marker anywhere else | `framework.survey.evaluate_markers` |
 | Clock offset: mean georeferenced minus true position equals speed x offset within 1 cm | `truth_figures` |
 | Replay: the same usable/unusable decision and reason for every capture from takeoff on; the same markers within 1 cm | `framework/replay_check.py` |
