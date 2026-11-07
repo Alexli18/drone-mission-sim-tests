@@ -4,6 +4,8 @@ import json
 import math
 import subprocess
 import sys
+from collections import Counter
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -31,7 +33,7 @@ REPO = Path(__file__).resolve().parents[2]
 SENSOR_BRIDGE = REPO / "ros2_ws" / "src" / "sensor_bridge"
 LINE = Line(start_north_m=5.0, start_east_m=0.0, heading_deg=0.0, length_m=20.0)
 PARAMS = GeorefParams(sensor_height_m=0.4, sensor_offset_m=(0.0, 0.0, 0.0), off_line_m=0.5,
-                      height_band_m=0.15, hold_timeout_s=0.5, wall_fallback_s=2.0)
+                      height_band_m=0.15, hold_timeout_s=0.5, hold_min_wall_s=1.0, wall_fallback_s=2.0)
 POSE_DT_US = 20_000          # 50 Hz
 SPEED = 1.0                  # m/s along north
 
@@ -315,8 +317,42 @@ def test_hold_queue_timeout_in_simulated_time():
         queue.pose_arrived(0.0)
         assert queue.release(hist, t, 0.0) == []
     hist.add(flight_pose(2_500_000))
-    out = queue.release(hist, 2_500_000, 0.0)
+    assert queue.release(hist, 2_500_000, PARAMS.hold_min_wall_s - 0.1) == []   # too little wall time
+    out = queue.release(hist, 2_500_000, PARAMS.hold_min_wall_s)
     assert [(r.release, r.georef.reason) for r in out] == [("timeout", "no_pose")]
+
+
+def worked_off_backlog(params, stall_s):
+    """Releases of a node that stopped for ``stall_s`` simulated seconds.
+
+    The sensor kept capturing (20 per second); afterwards the node handles the captures
+    first, stamped with its old "now", then the poses that arrived meanwhile, all within a
+    few milliseconds of wall time (what the bag of a CI flight showed after a stall).
+    """
+    t0 = 5_000_000
+    hist = history_of(range(1_000_000, t0 + 1, POSE_DT_US))
+    queue = HoldQueue(LINE, params)
+    out = []
+    for i in range(int(stall_s * 20)):
+        queue.push(raw(i, [t0 + 50_000 * (i + 1)]), t0, 10.0)
+        out += queue.release(hist, t0, 10.0)
+    for t in range(t0 + POSE_DT_US, t0 + int(stall_s * 1e6) + 200_000, POSE_DT_US):
+        hist.add(flight_pose(t))
+        queue.pose_arrived(10.0)
+        out += queue.release(hist, t, 10.0)
+    return Counter((r.release, r.georef.reason) for r in out)
+
+
+def test_a_stall_of_the_node_does_not_turn_good_poses_into_no_pose():
+    assert worked_off_backlog(PARAMS, 1.5) == {("covered", "ok"): 30}
+
+
+def test_without_the_wall_time_guard_a_stall_loses_captures():
+    # The behaviour before the guard (docs/qa-notes.md): the first 0.5 s of the backlog is
+    # fine, every capture further ahead of the old "now" times out.
+    unguarded = worked_off_backlog(replace(PARAMS, hold_min_wall_s=0.0), 1.5)
+    assert unguarded[("timeout", "no_pose")] == 20
+    assert unguarded[("covered", "ok")] == 10
 
 
 def test_hold_queue_wall_fallback():
@@ -461,7 +497,8 @@ def test_replay_in_bag_order_needs_no_hold_timeout():
                 else int(e[1].sample_stamps_us[-1]) + 1)
     live, _, stream = run_queue(events, ground=GroundReference(), bag_order=True)
     assert {v[2] for v in live.values()} == {"covered"}
-    timed_out, _, _ = run_queue(stream)
+    # Without the wall-time guard of the hold timeout (it is what fires here).
+    timed_out, _, _ = run_queue(stream, params=replace(PARAMS, hold_min_wall_s=0.0))
     after_pause = capture_t0.index(3_000_000)
     assert timed_out[after_pause][1:3] == ("no_pose", "timeout")
     replay, _, _ = run_queue(stream, params=replay_params(PARAMS))

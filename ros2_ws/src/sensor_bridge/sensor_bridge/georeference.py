@@ -43,6 +43,7 @@ class GeorefParams:
     off_line_m: float
     height_band_m: float
     hold_timeout_s: float
+    hold_min_wall_s: float
     wall_fallback_s: float
 
 
@@ -163,8 +164,12 @@ class HoldQueue:
         raw, arrival_us, arrival_wall = item
         if history.covers(max(int(t) for t in raw.sample_stamps_us)):
             return RELEASE_COVERED
+        # The simulated-time timeout also needs some wall time: after a stall of the node the
+        # captures are processed before the poses that arrived meanwhile, so their stamp of
+        # "now" is old and the pose clock would pass it while the backlog is worked off.
         if (now_us is not None and arrival_us is not None
-                and now_us - arrival_us >= self.cfg.hold_timeout_s * 1e6):
+                and now_us - arrival_us >= self.cfg.hold_timeout_s * 1e6
+                and now_wall - arrival_wall >= self.cfg.hold_min_wall_s):
             return RELEASE_TIMEOUT
         since = self._last_pose_wall if self._last_pose_wall is not None else arrival_wall
         if now_wall - since >= self.cfg.wall_fallback_s:

@@ -41,6 +41,7 @@ from sensor_bridge.pose import PoseHistory, pose_from_sample
 
 TIMER_S = 0.1           # wall-clock release timer
 STATS_LOG_S = 10.0      # wall-clock period of the throughput log line (QoS and load diagnosis)
+STALL_S = 0.15          # wall-clock time between two callbacks that counts as a stall of the node
 POSE_INTERVAL_US = 20_000  # PX4 publishes 50 Hz (simulated); longer intervals are counted as gaps
 
 RELIABLE = QoSProfile(reliability=ReliabilityPolicy.RELIABLE,
@@ -77,6 +78,7 @@ PARAMS = {
     "off_line_m": Parameter.Type.DOUBLE,
     "height_band_m": Parameter.Type.DOUBLE,
     "hold_timeout_s": Parameter.Type.DOUBLE,
+    "hold_min_wall_s": Parameter.Type.DOUBLE,
     "wall_fallback_s": Parameter.Type.DOUBLE,
     "max_pose_gap_s": Parameter.Type.DOUBLE,
     "coverage_gap_factor": Parameter.Type.DOUBLE,
@@ -111,7 +113,8 @@ class GeoreferenceNode(Node):
             sensor_height_m=p["sensor_height_m"],
             sensor_offset_m=tuple(float(v) for v in p["sensor_offset_m"]),
             off_line_m=p["off_line_m"], height_band_m=p["height_band_m"],
-            hold_timeout_s=p["hold_timeout_s"], wall_fallback_s=p["wall_fallback_s"])
+            hold_timeout_s=p["hold_timeout_s"], hold_min_wall_s=p["hold_min_wall_s"],
+            wall_fallback_s=p["wall_fallback_s"])
         if p["pose_type"] == "sample":
             # Replay: no simulated-time hold timeout (see replay_params).
             self.cfg = replay_params(self.cfg)
@@ -130,6 +133,9 @@ class GeoreferenceNode(Node):
         self._pose_gaps = 0
         self._max_pose_interval_us = 0
         self._last_log = time.monotonic()
+        self._last_callback = time.monotonic()
+        self._stalls = 0
+        self._max_stall_s = 0.0
 
         # Every publisher in the constructor, so the bag recorder finds them before the
         # first capture.
@@ -163,7 +169,17 @@ class GeoreferenceNode(Node):
 
     # Inputs -------------------------------------------------------------------------
 
+    def _note_callback(self) -> None:
+        """Count a stall: no callback of this node ran for ``STALL_S`` or longer."""
+        now = time.monotonic()
+        gap = now - self._last_callback
+        self._last_callback = now
+        if gap >= STALL_S:
+            self._stalls += 1
+            self._max_stall_s = max(self._max_stall_s, gap)
+
     def on_pose(self, msg) -> None:
+        self._note_callback()
         pose = self._to_pose(msg)
         if pose is None:
             return
@@ -198,12 +214,14 @@ class GeoreferenceNode(Node):
                                    f"{self.ground.updates}, now {self.counters.now_us} us)")
 
     def on_raw(self, msg: SensorCapture) -> None:
+        self._note_callback()
         self.counters.on_raw(msg.capture_id)
         now_us = self.counters.now_us if self.counters.pose_received else None
         self.queue.push(msg, now_us, time.monotonic())
         self._release()
 
     def on_timer(self) -> None:
+        self._note_callback()
         self._release()
         if self._dirty:
             self.publish_status()
@@ -279,6 +297,7 @@ class GeoreferenceNode(Node):
             f"stats: poses={self._poses} dropped={self.history.dropped} "
             f"ground_z={self.ground.z0} "
             f"pose_gaps={self._pose_gaps} max_pose_interval_us={self._max_pose_interval_us} "
+            f"stalls={self._stalls} max_stall_s={self._max_stall_s:.2f} "
             f"captures_seen={c.captures_seen} released={c.released} held={len(self.queue)} "
             f"[{counts}]")
 
