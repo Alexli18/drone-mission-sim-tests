@@ -49,6 +49,7 @@ survey:                        # the line-survey test (docs/line-survey.md)
     replay_s_m: 0.01
     acceptance_radius_m: 0.5
     run_m: 2.0
+    settle_hover_s: 10.0      # simulated seconds to hover after take-off before the mission starts
     sensor_lag_max_s: 5.0      # simulated seconds the sensor may trail the newest pose
 telemetry_wall_hz:             # target wall-clock rates (divided by speed_factor for PX4)
   position: 50

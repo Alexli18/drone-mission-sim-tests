@@ -175,6 +175,23 @@ estimated position, the node under test georeferences with the estimated pose): 
 tests the chain, not the estimator, and the chain's result is then exact enough to
 check clock offsets to a centimetre.
 
+**Height at the start of the line (51 CI flights).** Two flights went over the 0.15 m height
+limit (0.191 and 0.172 m); the other 49 measured 0.044 to 0.115 m. The test's number can be
+rebuilt from the ULog alone (`vehicle_global_position` minus `home_position`; it matched the
+junit value to 0.01 m in all 51 flights), and the drop is real: the simulator's truth was
+0.2 m low, so it is not a measurement artefact. The profile sets `EKF2_RNG_CTRL 2`, which
+PX4 v1.18.0-rc1 defines as range aiding always on; the speed limit `EKF2_RNG_A_VMAX` applies
+only to the conditional mode, and no flight lost range fusion at speed. What the logs do
+show: in every flight the range-finder height fusion is off on the ground and resumes some
+time after take-off, usually after 1 to 2 s (median 1.85 s); in the two flights over the
+limit it resumed late (6.6 and 6.8 s after take-off), just before the line, and six of the
+seven largest errors come from flights where it took more than 3 s (a threshold chosen
+after the fact). Why it resumes late is not established. This is a correlation, not a
+proven cause, and the barometer error alone does not separate good flights from bad ones.
+The test therefore hovers `settle_hover_s` simulated seconds after take-off before the mission
+starts, as an experiment on that hypothesis; a line start 9 m from home instead of 5 m
+lowered the median error (0.070 against 0.083 m) but not the outliers.
+
 ## Deliberate-break checks
 
 A test suite that has never been seen to fail proves little. `docs/breaks/` holds

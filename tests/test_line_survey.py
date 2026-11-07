@@ -207,6 +207,14 @@ async def test_line_survey(cfg, scenario, drone, recorder, ros2, rosbridge, test
         await call(drone.action.arm(), cfg, "arm")
         await call(drone.action.takeoff(), cfg, "takeoff")
         await wait_altitude(recorder, h_v, rule.flight_height_m, timeouts.takeoff, cfg)
+        # Hover before the mission: PX4 resumes fusing the range finder some time after
+        # take-off and flies on the barometer until then (docs/qa-notes.md, "Height at
+        # the start of the line").
+        settle_from = recorder.sim_time_s()
+        await wait_until(lambda: recorder.sim_time_s() >= settle_from + rule.settle_hover_s,
+                         timeouts.hover,
+                         f"{rule.settle_hover_s} simulated seconds of hover before the mission",
+                         recorder, cfg.poll_interval_s)
 
     with allure.step("Mission over the line"):
         # 3. The line as a mission (run-in, start, end, run-out); the sensor lag is read

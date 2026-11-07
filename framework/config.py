@@ -148,6 +148,7 @@ class PassRules:
     replay_s_m: float
     acceptance_radius_m: float
     run_m: float
+    settle_hover_s: float
     sensor_lag_max_s: float
 
 
