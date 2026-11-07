@@ -164,7 +164,7 @@ follows one real defect from symptom to decision.
     simulator's ground truth from the ULog on the line and compares it with what PX4 estimates, which
     is what the test sees.
 *   **Deliberate breaks.** `docs/breaks/*.patch` each break one thing the suite guards;
-    `scripts/check_breaks.sh` proves the unit tests go red for every one.
+    `scripts/check_breaks.sh` proves the unit tests go red for every one, in the unit job of every CI run.
 *   **CI cost control.** Unit-only on push to `main`, path filters per suite, a `full-ci` label,
     docs-only changes ignored, a nightly run only if `main` changed, a weekly multi-seed pass-rate
     run, cancelled superseded pull-request runs, cached images and pip, `pytest-xdist`.
@@ -218,7 +218,7 @@ pytest tests/test_line_survey.py -k line_survey_markers
 ```
 
 `scripts/check_breaks.sh` applies each deliberate-break patch to a clean copy and requires the unit
-tests to fail.
+tests to fail (CI runs it in the unit job).
 
 **Locally on macOS (Docker Desktop, Apple Silicon):** the same commands work;
 the image runs natively on arm64 and its entrypoint routes MAVLink to the Mac.
