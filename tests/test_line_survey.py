@@ -13,6 +13,7 @@ import json
 import math
 import os
 
+import allure
 import pytest
 import yaml
 
@@ -182,170 +183,178 @@ async def test_line_survey(cfg, scenario, drone, recorder, ros2, rosbridge, test
     record_property("ds_m", round(ds, 4))
     record_property("capture_rate_hz", cfg.survey.sensor.capture_rate_hz)
 
-    # 1. Status topics, the rosapi check, the first PX4 pose at the georeferencing node.
-    rosbridge.subscribe(STATUS, STATUS_TYPE)
-    rosbridge.subscribe(TRUTH, TRUTH_TYPE)
-    rosbridge.subscribe(GEOREF, GEOREF_TYPE)
-    await assert_no_sim_subscriptions(rosbridge, cfg, "before the flight")
-    await wait_for_topic(rosbridge, STATUS, lambda m: m["pose_received"],
-                         timeouts.first_dds_position, f"{STATUS} pose_received")
+    with allure.step("Start and ready checks"):
+        # 1. Status topics, the rosapi check, the first PX4 pose at the georeferencing node.
+        rosbridge.subscribe(STATUS, STATUS_TYPE)
+        rosbridge.subscribe(TRUTH, TRUTH_TYPE)
+        rosbridge.subscribe(GEOREF, GEOREF_TYPE)
+        await assert_no_sim_subscriptions(rosbridge, cfg, "before the flight")
+        await wait_for_topic(rosbridge, STATUS, lambda m: m["pose_received"],
+                             timeouts.first_dds_position, f"{STATUS} pose_received")
 
-    # 2. Take off to h_v.
-    home = await wait_for_stream(drone.telemetry.home(), lambda h: True, timeouts.health,
-                                 "home position")
-    plan, _ = to_mission_plan(line_waypoints(line, rule.run_m), home.latitude_deg,
-                              home.longitude_deg, h_v, scenario.speed_m_s,
-                              rule.acceptance_radius_m)
-    await call(drone.action.set_takeoff_altitude(h_v), cfg, "set takeoff altitude")
-    await call(drone.mission.set_return_to_launch_after_mission(False), cfg,
-               "no RTL after mission")
-    await call(drone.mission.upload_mission(plan), cfg, "upload mission")
-    await wait_armable(drone, cfg)
-    await call(drone.action.arm(), cfg, "arm")
-    await call(drone.action.takeoff(), cfg, "takeoff")
-    await wait_altitude(recorder, h_v, rule.flight_height_m, timeouts.takeoff, cfg)
+    with allure.step("Take off"):
+        # 2. Take off to h_v.
+        home = await wait_for_stream(drone.telemetry.home(), lambda h: True, timeouts.health,
+                                     "home position")
+        plan, _ = to_mission_plan(line_waypoints(line, rule.run_m), home.latitude_deg,
+                                  home.longitude_deg, h_v, scenario.speed_m_s,
+                                  rule.acceptance_radius_m)
+        await call(drone.action.set_takeoff_altitude(h_v), cfg, "set takeoff altitude")
+        await call(drone.mission.set_return_to_launch_after_mission(False), cfg,
+                   "no RTL after mission")
+        await call(drone.mission.upload_mission(plan), cfg, "upload mission")
+        await wait_armable(drone, cfg)
+        await call(drone.action.arm(), cfg, "arm")
+        await call(drone.action.takeoff(), cfg, "takeoff")
+        await wait_altitude(recorder, h_v, rule.flight_height_m, timeouts.takeoff, cfg)
 
-    # 3. The line as a mission (run-in, start, end, run-out); the sensor lag is read
-    # while it flies.
-    await call(drone.mission.start_mission(), cfg, "start mission")
-    lags = []
+    with allure.step("Mission over the line"):
+        # 3. The line as a mission (run-in, start, end, run-out); the sensor lag is read
+        # while it flies.
+        await call(drone.mission.start_mission(), cfg, "start mission")
+        lags = []
 
-    async def finished():
-        lag = sensor_lag_s(rosbridge.latest(STATUS), rosbridge.latest(TRUTH))
-        if lag is not None:
-            lags.append(lag)
-        return await call(drone.mission.is_mission_finished(), cfg, "is mission finished")
+        async def finished():
+            lag = sensor_lag_s(rosbridge.latest(STATUS), rosbridge.latest(TRUTH))
+            if lag is not None:
+                lags.append(lag)
+            return await call(drone.mission.is_mission_finished(), cfg, "is mission finished")
 
-    await wait_until(finished, timeouts.mission, "mission finished", recorder,
-                     cfg.poll_interval_s)
-    lag_max = max(lags, default=math.nan)
-    record_property("sensor_lag_max_s", round(lag_max, 3))
-    # Reported with the pass rules below (one assertion with every failure).
-    lag_failure = None if lag_max <= rule.sensor_lag_max_s else (
-        (f"the sensor within {rule.sensor_lag_max_s} s (simulated) of the newest PX4 pose "
-         "during the mission"),
-        f"{lag_max:.2f} s behind at most ({len(lags)} readings)")
-    lat, lon = home.latitude_deg, home.longitude_deg
-    t_in, t_out = line_window(recorder, line, lat, lon)
-    height_err = assert_altitude(recorder, h_v, math.inf, t_in, t_out)
-    cross_max = assert_cross_track(recorder, line, lat, lon, math.inf)
-    speed = line_speed(recorder, line, lat, lon)
-    record_property("flight_height_err_m", round(height_err, 3))
-    record_property("cross_track_max_m", round(cross_max, 3))
-    record_property("line_speed_m_s", round(speed, 3))
-    record_property("effective_speed_factor", round(recorder.effective_speed_factor(), 2))
+        await wait_until(finished, timeouts.mission, "mission finished", recorder,
+                         cfg.poll_interval_s)
+        lag_max = max(lags, default=math.nan)
+        record_property("sensor_lag_max_s", round(lag_max, 3))
+        # Reported with the pass rules below (one assertion with every failure).
+        lag_failure = None if lag_max <= rule.sensor_lag_max_s else (
+            (f"the sensor within {rule.sensor_lag_max_s} s (simulated) of the newest PX4 pose "
+             "during the mission"),
+            f"{lag_max:.2f} s behind at most ({len(lags)} readings)")
+        lat, lon = home.latitude_deg, home.longitude_deg
+        t_in, t_out = line_window(recorder, line, lat, lon)
+        height_err = assert_altitude(recorder, h_v, math.inf, t_in, t_out)
+        cross_max = assert_cross_track(recorder, line, lat, lon, math.inf)
+        speed = line_speed(recorder, line, lat, lon)
+        record_property("flight_height_err_m", round(height_err, 3))
+        record_property("cross_track_max_m", round(cross_max, 3))
+        record_property("line_speed_m_s", round(speed, 3))
+        record_property("effective_speed_factor", round(recorder.effective_speed_factor(), 2))
 
-    # 4. Land, stop the sensor, drain.
-    await call(drone.action.land(), cfg, "land")
-    await wait_landed_and_disarmed(recorder, timeouts.land, cfg)
-    stopped = await rosbridge.call_service("/survey/stop", "sensor_bridge_msgs/srv/Stop", {},
-                                           timeouts.mavsdk_call)
-    if not stopped["has_capture"]:
-        raise FlightAssertionError("the sensor emitted at least one capture", "none")
-    last = int(stopped["last_capture_id"])
-    await wait_for_topic(rosbridge, STATUS,
-                         lambda m: m["has_capture"] and m["last_capture_id"] == last
-                         and m["queue_empty"], timeouts.sensor_drain,
-                         f"{STATUS} last_capture_id {last} and queue_empty")
-    await wait_for_topic(rosbridge, TRUTH, lambda m: m["capture_id"] == last,
-                         timeouts.sensor_drain, f"{TRUTH} capture_id {last}")
-    await wait_for_topic(rosbridge, GEOREF, lambda m: m["raw"]["capture_id"] == last,
-                         timeouts.sensor_drain, f"{GEOREF} capture_id {last}")
+    with allure.step("Land, stop the sensor, drain"):
+        # 4. Land, stop the sensor, drain.
+        await call(drone.action.land(), cfg, "land")
+        await wait_landed_and_disarmed(recorder, timeouts.land, cfg)
+        stopped = await rosbridge.call_service("/survey/stop", "sensor_bridge_msgs/srv/Stop", {},
+                                               timeouts.mavsdk_call)
+        if not stopped["has_capture"]:
+            raise FlightAssertionError("the sensor emitted at least one capture", "none")
+        last = int(stopped["last_capture_id"])
+        await wait_for_topic(rosbridge, STATUS,
+                             lambda m: m["has_capture"] and m["last_capture_id"] == last
+                             and m["queue_empty"], timeouts.sensor_drain,
+                             f"{STATUS} last_capture_id {last} and queue_empty")
+        await wait_for_topic(rosbridge, TRUTH, lambda m: m["capture_id"] == last,
+                             timeouts.sensor_drain, f"{TRUTH} capture_id {last}")
+        await wait_for_topic(rosbridge, GEOREF, lambda m: m["raw"]["capture_id"] == last,
+                             timeouts.sensor_drain, f"{GEOREF} capture_id {last}")
 
-    # 5. Final figures; Finalize; the rosapi check again.
-    status = rosbridge.latest(STATUS)
-    finalized = await rosbridge.call_service(
-        "/markers/finalize", "sensor_bridge_msgs/srv/Finalize", {"line_id": scenario.name},
-        timeouts.finalize)
-    if not finalized["success"] or int(finalized["last_capture_id"]) != last:
-        raise FlightAssertionError(f"finalize succeeds with last_capture_id {last}",
-                                   f"success {finalized['success']}, last_capture_id "
-                                   f"{finalized['last_capture_id']}: {finalized['message']}")
-    await assert_no_sim_subscriptions(rosbridge, cfg, "after finalize")
-    counts = reason_counts(status)
-    truth_msgs, georef_msgs = recorded(rosbridge, TRUTH), recorded(rosbridge, GEOREF)
-    stream_failures = capture_stream_failures(truth_msgs, georef_msgs, status, last)
-    window_start = capture_window_start(truth_msgs, georef_msgs)
-    record_property("capture_ids_published", last + 1)
-    record_property("capture_window_first_id", -1 if window_start is None else window_start)
-    record_property("capture_stream_problems", len(stream_failures))
-    figures = truth_figures(truth_msgs, georef_msgs, line.length_m, ds,
-                            cfg.survey.georeference.coverage_gap_factor)
-    record_property("coverage", round(figures.coverage, 4))
-    record_property("coverage_georef", round(status["coverage"], 4))
-    record_property("max_gap_m", round(figures.max_gap_m, 4))
-    record_property("usable_without_truth", figures.usable_without_truth)
-    record_property("samples_without_pose", figures.samples_without_pose)
-    record_property("clock_shift_mean_m", round(figures.clock_shift_mean_m, 4))
-    record_property("captures_seen", status["captures_seen"])
-    record_property("usable_captures", status["usable"])
-    record_property("no_pose", counts["no_pose"])
-    record_property("reasons", ", ".join(f"{r}={n}" for r, n in counts.items()))
-    record_property("captures_used", finalized["captures_used"])
+    with allure.step("Final figures and finalize"):
+        # 5. Final figures; Finalize; the rosapi check again.
+        status = rosbridge.latest(STATUS)
+        finalized = await rosbridge.call_service(
+            "/markers/finalize", "sensor_bridge_msgs/srv/Finalize", {"line_id": scenario.name},
+            timeouts.finalize)
+        if not finalized["success"] or int(finalized["last_capture_id"]) != last:
+            raise FlightAssertionError(f"finalize succeeds with last_capture_id {last}",
+                                       f"success {finalized['success']}, last_capture_id "
+                                       f"{finalized['last_capture_id']}: {finalized['message']}")
+        await assert_no_sim_subscriptions(rosbridge, cfg, "after finalize")
+        counts = reason_counts(status)
+        truth_msgs, georef_msgs = recorded(rosbridge, TRUTH), recorded(rosbridge, GEOREF)
+        stream_failures = capture_stream_failures(truth_msgs, georef_msgs, status, last)
+        window_start = capture_window_start(truth_msgs, georef_msgs)
+        record_property("capture_ids_published", last + 1)
+        record_property("capture_window_first_id", -1 if window_start is None else window_start)
+        record_property("capture_stream_problems", len(stream_failures))
+        figures = truth_figures(truth_msgs, georef_msgs, line.length_m, ds,
+                                cfg.survey.georeference.coverage_gap_factor)
+        record_property("coverage", round(figures.coverage, 4))
+        record_property("coverage_georef", round(status["coverage"], 4))
+        record_property("max_gap_m", round(figures.max_gap_m, 4))
+        record_property("usable_without_truth", figures.usable_without_truth)
+        record_property("samples_without_pose", figures.samples_without_pose)
+        record_property("clock_shift_mean_m", round(figures.clock_shift_mean_m, 4))
+        record_property("captures_seen", status["captures_seen"])
+        record_property("usable_captures", status["usable"])
+        record_property("no_pose", counts["no_pose"])
+        record_property("reasons", ", ".join(f"{r}={n}" for r, n in counts.items()))
+        record_property("captures_used", finalized["captures_used"])
 
-    # The detector's output (the runner reads its file without ROS).
-    markers = replay_check.read_markers(ros2.out_dir / "markers.json")
-    verdict = evaluate_markers([m.s_m for m in survey.markers], [m["s_m"] for m in markers],
-                               rule.position_tol_m)
-    record_property("markers_found", len(markers))
-    record_property("false_markers", len(verdict.false_markers))
-    record_property("marker_errors_m", json.dumps(
-        [None if e is None else round(e, 3) for e in verdict.errors_m]))
+        # The detector's output (the runner reads its file without ROS).
+        markers = replay_check.read_markers(ros2.out_dir / "markers.json")
+        verdict = evaluate_markers([m.s_m for m in survey.markers], [m["s_m"] for m in markers],
+                                   rule.position_tol_m)
+        record_property("markers_found", len(markers))
+        record_property("false_markers", len(verdict.false_markers))
+        record_property("marker_errors_m", json.dumps(
+            [None if e is None else round(e, 3) for e in verdict.errors_m]))
 
-    # Clock offset: the georeferenced capture positions against the PX4 estimate at the
-    # samples' true times; expected v x offset with v the measured line speed.
-    offset_s = survey.clock.offset_ms / 1000.0
-    expected_shift = speed * offset_s
-    if offset_s != 0.0:
-        record_property("clock_shift_expected_m", round(expected_shift, 4))
+        # Clock offset: the georeferenced capture positions against the PX4 estimate at the
+        # samples' true times; expected v x offset with v the measured line speed.
+        offset_s = survey.clock.offset_ms / 1000.0
+        expected_shift = speed * offset_s
+        if offset_s != 0.0:
+            record_property("clock_shift_expected_m", round(expected_shift, 4))
 
-    # 6. Pass rules (one assertion with every failure).
-    failures = [lag_failure] if lag_failure else []
-    # Rule 0: no capture lost, repeated or reordered between the sensor, the
-    # georeferencing node and the recordings the figures below are computed from.
-    failures.extend(stream_failures)
+    with allure.step("Pass rules"):
+        # 6. Pass rules (one assertion with every failure).
+        failures = [lag_failure] if lag_failure else []
+        # Rule 0: no capture lost, repeated or reordered between the sensor, the
+        # georeferencing node and the recordings the figures below are computed from.
+        failures.extend(stream_failures)
 
-    def check(ok: bool, expected: str, actual: str) -> None:
-        if not ok:
-            failures.append((expected, actual))
+        def check(ok: bool, expected: str, actual: str) -> None:
+            if not ok:
+                failures.append((expected, actual))
 
-    # Rule 1: coverage from the sensor's own positions, and the georeferencing node agrees.
-    gap_m = cfg.survey.georeference.coverage_gap_factor * ds
-    check(figures.coverage >= rule.coverage_min,
-          f"coverage >= {rule.coverage_min} (gaps <= {gap_m:.3f} m)",
-          f"{figures.coverage:.4f}, max gap {figures.max_gap_m:.3f} m")
-    check(abs(figures.coverage - status["coverage"]) <= rule.coverage_agreement,
-          f"georeferenced coverage within {rule.coverage_agreement} of {figures.coverage:.4f}",
-          f"{status['coverage']:.4f}")
-    check(figures.usable_without_truth == 0,
-          "no usable capture the sensor built without a pose (usable_without_truth 0)",
-          f"usable_without_truth {figures.usable_without_truth} "
-          f"({figures.samples_without_pose} samples without a pose)")
-    # Rule 2: flight over the line, from MAVSDK telemetry.
-    check(height_err <= rule.flight_height_m,
-          f"height within {h_v} ± {rule.flight_height_m} m over the line",
-          f"max error {height_err:.3f} m")
-    check(cross_max <= rule.cross_track_m,
-          f"cross-track within ± {rule.cross_track_m} m over the line", f"max {cross_max:.3f} m")
-    check(abs(speed - scenario.speed_m_s) <= rule.speed_tolerance * scenario.speed_m_s,
-          f"line speed {scenario.speed_m_s} m/s ± {rule.speed_tolerance:.0%}",
-          f"{speed:.3f} m/s")
-    # Rule 3: every painted marker found within the tolerance, no marker elsewhere.
-    failures.extend(verdict.failures)
-    # Rule 4 (clock-offset scenarios): mean shift = line speed x offset in the
-    # georeferenced positions. (The markers found must still be within the tolerance of
-    # rule 3; their individual errors, up to a few cm, carry the cross-track wander.)
-    if offset_s != 0.0:
-        check(abs(figures.clock_shift_mean_m - expected_shift) <= rule.clock_shift_m,
-              f"clock shift {survey.clock.offset_ms:+.0f} ms: mean georeferenced - true "
-              f"position {expected_shift:+.4f} m ({speed:.3f} m/s x {offset_s:+.3f} s) "
-              f"± {rule.clock_shift_m} m", f"{figures.clock_shift_mean_m:+.4f} m")
-    # Rule 5 (replay_check scenarios): replay the recording through a fresh
-    # georeferencing node and detector.
-    if survey.replay_check:
-        failures.extend(await replay(cfg, scenario, test_id, ros2, rosbridge,
-                                     rosbridge.latest(STATUS), markers, last,
-                                     takeoff_sim_s(recorder), record_property))
-    if failures:
-        raise FlightAssertionError("; ".join(e for e, _ in failures),
-                                   "; ".join(a for _, a in failures), recorder)
+        # Rule 1: coverage from the sensor's own positions, and the georeferencing node agrees.
+        gap_m = cfg.survey.georeference.coverage_gap_factor * ds
+        check(figures.coverage >= rule.coverage_min,
+              f"coverage >= {rule.coverage_min} (gaps <= {gap_m:.3f} m)",
+              f"{figures.coverage:.4f}, max gap {figures.max_gap_m:.3f} m")
+        check(abs(figures.coverage - status["coverage"]) <= rule.coverage_agreement,
+              f"georeferenced coverage within {rule.coverage_agreement} of {figures.coverage:.4f}",
+              f"{status['coverage']:.4f}")
+        check(figures.usable_without_truth == 0,
+              "no usable capture the sensor built without a pose (usable_without_truth 0)",
+              f"usable_without_truth {figures.usable_without_truth} "
+              f"({figures.samples_without_pose} samples without a pose)")
+        # Rule 2: flight over the line, from MAVSDK telemetry.
+        check(height_err <= rule.flight_height_m,
+              f"height within {h_v} ± {rule.flight_height_m} m over the line",
+              f"max error {height_err:.3f} m")
+        check(cross_max <= rule.cross_track_m,
+              f"cross-track within ± {rule.cross_track_m} m over the line",
+              f"max {cross_max:.3f} m")
+        check(abs(speed - scenario.speed_m_s) <= rule.speed_tolerance * scenario.speed_m_s,
+              f"line speed {scenario.speed_m_s} m/s ± {rule.speed_tolerance:.0%}",
+              f"{speed:.3f} m/s")
+        # Rule 3: every painted marker found within the tolerance, no marker elsewhere.
+        failures.extend(verdict.failures)
+        # Rule 4 (clock-offset scenarios): mean shift = line speed x offset in the
+        # georeferenced positions. (The markers found must still be within the tolerance of
+        # rule 3; their individual errors, up to a few cm, carry the cross-track wander.)
+        if offset_s != 0.0:
+            check(abs(figures.clock_shift_mean_m - expected_shift) <= rule.clock_shift_m,
+                  f"clock shift {survey.clock.offset_ms:+.0f} ms: mean georeferenced - true "
+                  f"position {expected_shift:+.4f} m ({speed:.3f} m/s x {offset_s:+.3f} s) "
+                  f"± {rule.clock_shift_m} m", f"{figures.clock_shift_mean_m:+.4f} m")
+        # Rule 5 (replay_check scenarios): replay the recording through a fresh
+        # georeferencing node and detector.
+        if survey.replay_check:
+            with allure.step("Replay check"):
+                failures.extend(await replay(cfg, scenario, test_id, ros2, rosbridge,
+                                             rosbridge.latest(STATUS), markers, last,
+                                             takeoff_sim_s(recorder), record_property))
+        if failures:
+            raise FlightAssertionError("; ".join(e for e, _ in failures),
+                                       "; ".join(a for _, a in failures), recorder)

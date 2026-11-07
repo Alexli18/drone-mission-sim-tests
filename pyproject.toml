@@ -8,6 +8,8 @@ version = "0.1.0"
 description = "Simulation-based tests for PX4 drone missions: SIH SITL, failure injection, CI gates"
 requires-python = ">=3.11"
 dependencies = [
+    # The flight jobs write allure-results (framework/reporting.py); inert without --alluredir.
+    "allure-pytest==2.16.2",
     "mavsdk-grpc==4.0.5",
     "pytest==9.2.0",
     "pytest-asyncio==1.4.1.post1",

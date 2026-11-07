@@ -16,6 +16,7 @@ import time
 import pytest
 import pytest_asyncio
 
+from framework import reporting
 from framework.config import load_baseline_params, load_config
 from framework.mission import load_scenario
 from framework.sitl import (
@@ -57,6 +58,17 @@ def scenario(request):
         return load_scenario(request.param)
     marker = request.node.get_closest_marker("scenario")
     return load_scenario(marker.args[0]) if marker else None
+
+
+@pytest.fixture(autouse=True)
+def allure_identity(request, base_cfg, test_id):
+    """Flight tests: the Allure parameters and description (framework/reporting.py)."""
+    flight = request.node.get_closest_marker("sitl") is not None
+    if flight:
+        reporting.apply_parameters(base_cfg, request.getfixturevalue("scenario"))
+    yield
+    if flight:
+        reporting.apply_description(test_id)
 
 
 def _is_ros(scenario) -> bool:
@@ -151,4 +163,8 @@ def pytest_runtest_makereport(item, call):
         text = f"telemetry log: {rec.path}\nlast snapshot:\n{json.dumps(rec.snapshot(), indent=2)}"
         # junitxml copies sections named "Captured stdout ..." into <system-out>.
         report.sections.append(("Captured stdout teardown", text))
+    if report.when == "call" and item.get_closest_marker("sitl") is not None:
+        reporting.attach_metrics(item.user_properties)
+        if report.failed and rec is not None:
+            reporting.attach_failure(rec)
     return report
