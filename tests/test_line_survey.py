@@ -41,6 +41,8 @@ from framework.mission import (
 from framework.rosbridge import record_name, wait_for_topic
 from framework.sitl import ARTIFACTS, wait_armable
 from framework.survey import (
+    capture_stream_failures,
+    capture_window_start,
     ds_m,
     evaluate_markers,
     node_params,
@@ -261,8 +263,14 @@ async def test_line_survey(cfg, scenario, drone, recorder, ros2, rosbridge, test
                                    f"{finalized['last_capture_id']}: {finalized['message']}")
     await assert_no_sim_subscriptions(rosbridge, cfg, "after finalize")
     counts = reason_counts(status)
-    figures = truth_figures(recorded(rosbridge, TRUTH), recorded(rosbridge, GEOREF),
-                            line.length_m, ds, cfg.survey.georeference.coverage_gap_factor)
+    truth_msgs, georef_msgs = recorded(rosbridge, TRUTH), recorded(rosbridge, GEOREF)
+    stream_failures = capture_stream_failures(truth_msgs, georef_msgs, status, last)
+    window_start = capture_window_start(truth_msgs, georef_msgs)
+    record_property("capture_ids_published", last + 1)
+    record_property("capture_window_first_id", -1 if window_start is None else window_start)
+    record_property("capture_stream_problems", len(stream_failures))
+    figures = truth_figures(truth_msgs, georef_msgs, line.length_m, ds,
+                            cfg.survey.georeference.coverage_gap_factor)
     record_property("coverage", round(figures.coverage, 4))
     record_property("coverage_georef", round(status["coverage"], 4))
     record_property("max_gap_m", round(figures.max_gap_m, 4))
@@ -293,6 +301,9 @@ async def test_line_survey(cfg, scenario, drone, recorder, ros2, rosbridge, test
 
     # 6. Pass rules (one assertion with every failure).
     failures = [lag_failure] if lag_failure else []
+    # Rule 0: no capture lost, repeated or reordered between the sensor, the
+    # georeferencing node and the recordings the figures below are computed from.
+    failures.extend(stream_failures)
 
     def check(ok: bool, expected: str, actual: str) -> None:
         if not ok:
