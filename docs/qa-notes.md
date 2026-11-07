@@ -3,7 +3,7 @@
 A running list of the flakes and surprises met while building this suite, each with its
 root cause and the check that would now catch it. Numbers are measurements from
 development runs (Apple Silicon Mac with Docker Desktop, and the free 2-vCPU GitHub
-runner); they are examples, not a guarantee. The README lists what CI has shown.
+runner); they are examples, not a guarantee. [evidence.md](evidence.md) lists what CI has shown.
 
 ## Summary
 
@@ -362,7 +362,7 @@ checked at the flight layer: with `no_lever_arm.patch` applied and the ROS image
 -0.13 m against +0.02 m expected. A break that only the
 flight test can catch (for example a pose queue that is too small) is the end-to-end
 test's job. The CI gate itself was checked the same way in the base project (a throwaway
-branch that disables a failsafe turns the workflow red, see the README).
+branch that disables a failsafe turns the workflow red, see [evidence.md](evidence.md)).
 
 ## CI cost control
 
