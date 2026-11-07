@@ -14,6 +14,15 @@
 # after the waiter has returned, which aborts PX4 with a glibc assertion
 # (tpp.c:83 or pthread_mutex_lock.c:94), crashes it or freezes its clock. Drop
 # this image once the pinned PX4 release contains the fix.
+#
+# rng_stuck_detector.patch (simulation only): the EKF2 range finder has a "stuck"
+# detector (sensor_range_finder.cpp, updateStuckCheck). When no valid sample was seen
+# for 10 s, it treats the sensor as stuck until the readings vary by 0.1 m. The simulated
+# sensor reports about 0 m with quality 0 on the ground, so after take-off the detector
+# starts armed, the height estimate rests on the barometer, and a vehicle hovering
+# steadily stays low until it moves vertically (up to 12 s in 68 CI flights). The patch
+# sets the threshold to 0, which the source documents as "set to zero to disable".
+# Background and the evidence: docs/qa-notes.md, "Height at the start of the line".
 ARG BASE
 
 # Built on the pinned image itself (Ubuntu 24.04), so the binary links against
@@ -34,9 +43,9 @@ RUN git clone --depth 1 -b "$PX4_TAG" https://github.com/PX4/PX4-Autopilot.git /
 # (.github/workflows/build_deb_package.yml at the tag).
 RUN RUNS_IN_DOCKER=true /px4/Tools/setup/ubuntu.sh --no-nuttx --no-sim-tools \
     && rm -rf /var/lib/apt/lists/*
-COPY lockstep_scheduler.patch /tmp/
+COPY lockstep_scheduler.patch rng_stuck_detector.patch /tmp/
 WORKDIR /px4
-RUN git apply /tmp/lockstep_scheduler.patch \
+RUN git apply /tmp/lockstep_scheduler.patch /tmp/rng_stuck_detector.patch \
     && make px4_sitl_sih \
     && strip build/px4_sitl_sih/bin/px4
 
