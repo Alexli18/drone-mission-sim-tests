@@ -126,37 +126,24 @@ the truth comes from and what is not covered. [docs/qa-notes.md](docs/qa-notes.m
 Causes, run ids and numbers: [docs/evidence.md](docs/evidence.md#what-is-not-stable). The full list of limitations:
 [docs/limitations.md](docs/limitations.md).
 
-**Open issues**
-
-*   **Height over the line (limit ±0.15 m).** 2 of 51 measured flights exceeded the limit (0.191 m and 0.172 m). Cause: the
-    simulated range finder triggered the estimator's stuck detector, which kept it out of the height estimate for up to 12 s
-    after take-off. The detector is now disabled in the simulation image, and a rule checks the delay in the PX4 log. Too
-    few flights have run since to call this fixed, so the limit stays.
-    [QA notes](docs/qa-notes.md#height-at-the-start-of-the-line).
-*   **Position of the second marker (limit 0.10 m).** The largest error measured was 0.096 m, a margin of 4 mm. The limit
-    stays: it is what catches a georeferencing that ignores the 15 cm lever arm (`docs/breaks/`).
-*   **Stall of the georeferencing node (fixed).** In one weekly run, 32 captures got the status `no_pose` although every pose
-    had arrived. The hold timeout now also requires elapsed wall time. A unit test reproduces the stall; stalls are too rare
-    for CI to confirm the fix.
-    [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose).
-*   **Test-infrastructure failures.** `rosapi` crashed when queried about a node it had not seen yet; this is fixed, and the
-    test now waits for the node. Two failures are unexplained: one "service does not exist" error and 15 capture ids
-    missing from the test's recordings.
-    [QA notes](docs/qa-notes.md#rosapi-dies-when-asked-about-a-node-it-does-not-see-yet).
+| Item | Status | In short |
+|---|---|---|
+| Height over the line (limit ±0.15 m) | cause removed in the simulation image, **not confirmed** | 2 of 51 measured flights exceeded the limit (0.191 m and 0.172 m). The simulated range finder tripped the estimator's stuck detector, which kept it out of the height estimate for up to 12 s after take-off. The detector is disabled in the image and a rule checks the delay in the PX4 log. Too few flights have run since to call it fixed. [QA notes](docs/qa-notes.md#height-at-the-start-of-the-line) |
+| Stall of the georeferencing node | fixed, confirmed by a **unit test, not by CI** | In one weekly run, 32 captures got the status `no_pose` although every pose had arrived. The hold timeout now also requires elapsed wall time. Stalls are too rare for CI to confirm it. [QA notes](docs/qa-notes.md#a-stall-of-the-georeferencing-node-turns-into-no_pose) |
+| `rosapi` crash at the start of a test | fixed | `rosapi` crashed when queried about a node it had not seen yet; the test now waits for the node. [QA notes](docs/qa-notes.md#rosapi-dies-when-asked-about-a-node-it-does-not-see-yet) |
+| One "service does not exist" error; 15 capture ids missing from the test's recordings | **not explained** | Seen once each; the cause is not found. |
+| Tolerance of the marker position (0.10 m) | trade-off | The largest error measured was 0.096 m, a margin of 4 mm. The tolerance is what catches a georeferencing that ignores the 15 cm lever arm (`docs/breaks/`). |
 
 **Limitations**
 
-*   This is a simulation suite: nothing here is hardware-in-the-loop or a flight with a real vehicle. SIH physics is
-    simplified and the sensors are simulated.
-*   PX4 v1.18.0-rc1 is a release candidate, chosen because it is the first version where SIH supports GPS failure
-    injection. The patched image carries two patches: the lockstep fix (a stopgap until the pinned release contains the
-    upstream fix) and a simulation-only change to the range finder's stuck detector, not verified for a real range finder.
+*   This is a simulation suite. SIH physics is simplified and the sensors are simulated; there is no hardware-in-the-loop.
+*   PX4 v1.18.0-rc1 is a release candidate, the first version where SIH supports GPS failure injection. The image carries two
+    patches: the lockstep fix (a stopgap until the pinned release contains the upstream fix) and a simulation-only change to
+    the range finder's stuck detector, not verified for a real range finder.
 *   Data link loss is produced with `iptables` (Linux only) and remote control loss by stopping the MAVLink manual-control
     stream, because PX4 answers `UNSUPPORTED` to the built-in injections.
-*   Some checks are coarse: after GPS loss the landing position is not checked (the descent is not controlled), and
-    barometer and magnetometer failures have no visible effect in SIH, so they are not scenarios.
-*   The line-survey test uses PX4's position estimate as its reference, so it checks the data path but not the estimator.
-    An experiment outside CI measures the estimator against ground truth.
+*   Some checks are coarse: after GPS loss the landing position is not checked, and barometer and magnetometer failures have
+    no visible effect in SIH, so they are not scenarios.
 
 ## Running
 
