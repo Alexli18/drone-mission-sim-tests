@@ -70,6 +70,7 @@ timeouts_wall_s:               # guards against hangs; boot values from spike S2
   ros_start: 60                # until "SURVEY READY" and the rosbridge port
   rosbridge_connect: 30
   first_dds_position: 30       # until /survey/status pose_received
+  node_discovery: 30           # until rosapi lists the nodes under test (docs/qa-notes.md)
   sensor_drain: 30             # after /survey/stop until the last capture is in and released
   finalize: 60                 # the /markers/finalize call
   replay: 120                  # until "SURVEY REPLAY DONE"

@@ -86,8 +86,9 @@ px4_params: {UXRCE_DDS_SYNCT: 0}
 ## The test (`tests/test_line_survey.py`)
 
 1. Start PX4 (patched image, DDS domain and own-IP options) and the ROS container; wait
-   for `SURVEY READY`, connect to rosbridge, subscribe, check with `rosapi` that the
-   nodes under test subscribe to no `/sim/*` topic, wait for the first pose.
+   for `SURVEY READY`, connect to rosbridge, subscribe, wait until `rosapi` lists the nodes
+   under test, check with `rosapi` that they subscribe to no `/sim/*` topic, wait for the
+   first pose.
 2. Take off to the sensor height, fly the mission: run-in, line start, line end,
    run-out. While it flies, read the **sensor lag** (below).
 3. Land, call `/survey/stop`, wait until the last capture is georeferenced and the queue
