@@ -18,6 +18,9 @@ runner); they are examples, not a guarantee. The README lists what CI has shown.
 | 7 | The second websocket connection of a session never opened | `roslibpy` object created off the Twisted reactor thread | Create and close on the reactor thread |
 | 8 | A unit test failed only under `pytest -n 2` | The fake websocket server counted the connection after answering | Count first, then answer |
 | 9 | The vehicle wandered 0.35 to 0.44 m off the line while the test saw 0.26 to 0.30 m | The estimator was wrong in a way the control loop follows | Parameter profile plus a true-versus-estimated check |
+| 10 | Height over the line above the 0.15 m limit in 2 of 51 flights | The estimator's range-finder "stuck" detector kept the range finder out of the height estimate for up to 12 s after take-off (simulated sensor) | The detector is disabled in the simulation image; a rule reads the PX4 log and fails when the fusion starts later than 3 s after take-off |
+| 11 | 32 captures `no_pose` and coverage 0.86 in one weekly flight although every pose had arrived | The georeferencing node stalled for about 0.4 s; the simulated-time hold timeout fired on a stale "now" while the poses were still queued | The timeout also needs wall time (`hold_min_wall_s`); unit tests model the stall; stalls are counted in the node's log |
+| 12 | `/rosapi/node_details` got no reply within 30 s, or did not exist | Humble's `rosapi` crashes when asked about a node it does not see yet; the test asked 0.4 s after the start | The test waits until `rosapi` lists the nodes (`wait_for_nodes`) |
 
 ## PX4 lockstep scheduler crash
 
