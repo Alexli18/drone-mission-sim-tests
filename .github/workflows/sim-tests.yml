@@ -124,6 +124,10 @@ jobs:
     if: needs.changes.outputs.sim == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    env:
+      # Allure parameters (framework/reporting.py): the matrix cell is part of a test's identity.
+      SIM_SUITE: ${{ matrix.suite }}
+      SIM_RUN: ${{ matrix.run }}
     strategy:
       fail-fast: false
       matrix:
@@ -148,6 +152,7 @@ jobs:
       - run: >-
           pytest -m sitl ${{ matrix.files }}
           --junitxml=artifacts/junit/${{ matrix.suite }}-${{ matrix.run }}.xml
+          --alluredir=allure-results
       - if: always()
         uses: actions/upload-artifact@v7
         with:
@@ -160,6 +165,13 @@ jobs:
         with:
           name: junit-${{ matrix.suite }}-${{ matrix.run }}
           path: artifacts/junit/
+          if-no-files-found: warn
+      # Allure results alone (no telemetry), for the allure job.
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-results-${{ matrix.suite }}-${{ matrix.run }}
+          path: allure-results/
           if-no-files-found: warn
 
   # Builds or restores the ROS base image once per workflow run, before the ROS jobs.
@@ -190,6 +202,8 @@ jobs:
       matrix:
         run: ${{ fromJSON((needs.changes.outputs.weekly == 'true' || inputs.runs == '3') && '[1,2,3]' || '[1]') }}
     env:
+      SIM_SUITE: ros-survey
+      SIM_RUN: ${{ matrix.run }}
       # Weekly and runs=3: the seed changes per run, so the pass rate covers noise and jitter.
       SURVEY_SEED_OFFSET: ${{ (needs.changes.outputs.weekly == 'true' || inputs.runs == '3') && matrix.run || 0 }}
       # Smoke test (pull request without full-ci): the main scenario alone, with its
@@ -218,6 +232,7 @@ jobs:
       - run: >-
           pytest "$SURVEY_TESTS" -m "$SURVEY_MARKS"
           --junitxml=artifacts/junit/ros-survey-${{ matrix.run }}.xml
+          --alluredir=allure-results
       - if: always()
         run: kill "$VMSTAT_PID" 2>/dev/null || true
       - if: always()
@@ -231,6 +246,12 @@ jobs:
         with:
           name: junit-ros-survey-${{ matrix.run }}
           path: artifacts/junit/
+          if-no-files-found: warn
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-results-ros-survey-${{ matrix.run }}
+          path: allure-results/
           if-no-files-found: warn
 
   report:
@@ -252,3 +273,34 @@ jobs:
           path: artifacts/
       # Reports only; a failed test entry already makes the workflow red.
       - run: python scripts/summarize.py artifacts/ >> "$GITHUB_STEP_SUMMARY"
+
+  # One HTML report from the Allure results of every matrix job. Artifact only: no
+  # Pages, no hosting. Allure 3 runs on Node; it needs Node >= 22.18, hence setup-node.
+  allure:
+    needs: [sim, ros-survey]
+    if: >-
+      !cancelled()
+      && (contains(needs.*.result, 'success') || contains(needs.*.result, 'failure'))
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+      # Missing artifacts (a job that died before writing results) are not an error.
+      - uses: actions/download-artifact@v8
+        continue-on-error: true
+        with:
+          pattern: allure-results-*
+          path: allure-results/
+          merge-multiple: true
+      - if: hashFiles('allure-results/**') != ''
+        run: npx --yes allure@3.22.1 generate allure-results --config allurerc.mjs --output allure-report
+      - id: upload
+        if: hashFiles('allure-report/**') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: allure-report
+          path: allure-report/
+      - if: steps.upload.outcome == 'success'
+        run: 'echo "Allure report: [artifact allure-report](${{ steps.upload.outputs.artifact-url }}) (unzip, open index.html)" >> "$GITHUB_STEP_SUMMARY"'
