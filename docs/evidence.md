@@ -44,6 +44,31 @@ Measured on the runs above and written without softening.
 *   The height rule, the marker margin and the `/rosapi/node_details` flake are in the README
     section "What is not stable" and in [qa-notes.md](qa-notes.md).
 
+## Flight figures
+
+Two figures, committed as `docs/img/*.png` and drawn from the `results-*` artifacts of the CI runs named
+under them, so each can be redrawn and checked against the run:
+
+| Figure | Test | Run | Draws |
+|---|---|---|---|
+| `failsafe_rc_loss_wind.png` | `test_failsafe[rc_loss_wind]` | [42396195239](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396195239) (`results-failsafes-1`) | The track seen from above and the height over time, shaded by flight mode (from the ULog: simulator truth and `vehicle_status.nav_state`) |
+| `line_survey_markers.png` | `test_line_survey[line_survey_markers]` | [42405381157](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42405381157) (`results-ros-survey-1`) | Captures along the line against the painted and the found markers (decisions and markers of the node), height over the line against its limit, and when the range finder joined the height estimate (ULog) |
+
+```sh
+pip install -e ".[plots]"
+scripts/flight_figures.py failsafe <ulog> out.png --title "..." --source "..."
+scripts/flight_figures.py survey <unpacked results-ros-survey-N> line_survey_markers out.png --title "..." --source "..."
+```
+
+The numbers on the figures are the test's own: height 0.092 m, marker errors -1.5, +4.9 and +2.0 cm,
+fusion after 0.75 s, 246 usable captures, landing 0.6 m from home (the recorded metrics of the same runs).
+
+How flight logs are looked at in practice: a ULog goes to a log viewer (PX4 Flight Review, run locally or
+self-hosted for real flights) and a ROS bag to a tool such as Foxglove, with the layout kept next to the
+code. This repository uses neither: nothing is uploaded to a public service, and no Foxglove layout is
+provided, because one could not be checked here. The two figures are drawn with plain scripts so
+that a reader sees a flight without installing anything.
+
 ## Raw data
 
 Every flight job uploads `results-<suite>-<n>` (telemetry, ULog, rosbag for the line survey, container

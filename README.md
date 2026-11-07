@@ -58,6 +58,20 @@ and [Testing practice](#testing-practice); its CI evidence, including what is no
 
 </details>
 
+## Two flights, drawn from the CI logs
+
+![Remote control lost in a 5 m/s wind: hold, return, landing 0.6 m from home](docs/img/failsafe_rc_loss_wind.png)
+
+*Failsafe test `rc_loss_wind`, [run 42396195239](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42396195239): the remote control stops at waypoint 3 in a
+5 m/s wind; PX4 holds for 5 s, climbs to about 30 m, flies home and lands 0.6 m from it.*
+
+![Line survey: captures, painted and found markers, height over the line, range-finder fusion](docs/img/line_survey_markers.png)
+
+*Line-survey test `line_survey_markers`, [run 42405381157](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42405381157): the three painted markers are found
+within 5 cm, the height stays within 9 cm of 0.40 m (limit 15 cm), and the range finder joins the height
+estimate 0.75 s after lift-off (limit 3 s). Both figures are drawn by `scripts/flight_figures.py` from the
+artifacts of those runs; more in [docs/evidence.md](docs/evidence.md#flight-figures).*
+
 ## Architecture
 
 ```mermaid
