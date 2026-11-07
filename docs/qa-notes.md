@@ -194,26 +194,47 @@ estimator does not reject them (`innovation_rejected` 0, test ratio near 0,
 as range aiding always on, so the speed limit `EKF2_RNG_A_VMAX` does not apply, and no
 flight lost the fusion at speed.
 
-Probable cause, established indirectly. The range finder's "stuck" detector
+Cause, confirmed by an experiment (below). The range finder's "stuck" detector
 (`sensor_range_finder.cpp`, `updateStuckCheck`) is armed when no valid sample was seen for
 10 s, and releases only when the readings vary by 0.1 m. The simulated sensor reports about
 0 m with quality 0 on the ground, so after take-off the detector starts armed; a vehicle
 hovering steadily at 0.25 m, low because the barometer is biased, produces no 0.1 m of
 variation and stays stuck, until it moves vertically (for instance when the mission
 starts). An offline model of that logic, written from the source, predicted the time the
-fusion started to within 0.13 to 0.20 s in 68 of 68 flights. It is not confirmed by the PX4
-log: `_is_stuck` is not logged, and the flag `cs_rng_stuck` is never set in this version.
-With a real sensor the detector would normally not be armed (not verified here).
+fusion started to within 0.13 to 0.20 s in 68 of 68 flights. The PX4 log cannot show it
+directly: `_is_stuck` is not logged, and the flag `cs_rng_stuck` is never set in this
+version. With a real sensor the detector would normally not be armed (not verified here).
 
 Experiments so far, all on CI. Starting the line 9 m from home instead of 5 m lowered the
 median error (0.070 against 0.083 m) but not the outliers. Hovering 10 s after take-off
 before the mission gave 0.064 to 0.079 m in 17 flights, but the fusion still started after
 the end of the hover in 7 of them, and the shifted flight path pushed the position of the
 second marker over its 0.10 m limit in several flights (that rule had a margin of 4 mm to
-begin with). This change patches the stuck detector's threshold to 0 in the simulation
-image (`docker/px4-sitl/rng_stuck_detector.patch`) to test the cause directly: if it is
-right, the fusion starts about 1 s after lift-off in every flight and the outliers
-disappear.
+begin with).
+
+The decisive experiment sets the stuck detector's threshold to 0, which disables it, in the
+simulation image (`docker/px4-sitl/rng_stuck_detector.patch`; one line). Four CI runs with
+three seeds each gave 24 flights, all passed, and the ULogs show:
+
+| | Flights | Fusion delay after lift-off, median | Maximum | Over 3 s |
+|---|---|---|---|---|
+| Detector on (5 m and 9 m series) | 51 | 1.84 s | 12.2 s | 6 |
+| Detector off (patched image) | 24 | 0.72 s | 0.78 s | 0 |
+
+The difference is not chance (Mann-Whitney U = 0, p = 3.5e-12). The offline model, written
+before the patch existed, was run on the 24 new flights in both settings: with the detector
+off it predicted the start of the fusion to within 0.3 s in 24 of 24 flights (median error
+-0.14 s); with it on, in 0 of 24 (it predicted 2.8 s in the median). For the "off" setting the
+model skips the stuck check, as PX4 does for a threshold of 0 or less; that is the only change
+to it.
+
+What this does not show. The typical height error did not move (median 0.078 m against
+0.081 m), only the tail of the fusion delay is gone, and the hover height in the first 10 s
+is the same (median 0.33 m against 0.34 m, p = 0.99). Flights above 0.15 m were 2 of 51
+before and 0 of 24 now, and flights above 0.10 m were 6 of 51 and 1 of 24; with a failure
+rate that low this is not enough to call the flake fixed, only to say that its cause is
+found and removed. The patch is a property of the simulation image; whether a real range
+finder arms the detector in the same way is not tested here.
 
 ## Deliberate-break checks
 
