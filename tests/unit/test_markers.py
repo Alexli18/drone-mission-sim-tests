@@ -165,7 +165,7 @@ def test_stop_ends_the_stream_and_reports_the_last_id():
 
 
 GEOREF = GeorefParams(sensor_height_m=0.4, sensor_offset_m=OFFSET, off_line_m=0.5,
-                      height_band_m=0.15, hold_timeout_s=0.5, wall_fallback_s=2.0)
+                      height_band_m=0.15, hold_timeout_s=0.5, hold_min_wall_s=1.0, wall_fallback_s=2.0)
 
 
 def fly(offset_ms=0.0, jitter_ms=0.0, seed=0, markers=MARKERS, georef=GEOREF):
@@ -206,7 +206,7 @@ def test_chain_with_a_wrong_lever_arm_is_caught_by_the_marker_position():
     """The georeferencing ignores the 15 cm offset: every marker is 15 cm off (tolerance
     10 cm), which is why the flight scenarios use a non-zero offset."""
     wrong = GeorefParams(sensor_height_m=0.4, sensor_offset_m=(0.0, 0.0, 0.0), off_line_m=0.5,
-                         height_band_m=0.15, hold_timeout_s=0.5, wall_fallback_s=2.0)
+                         height_band_m=0.15, hold_timeout_s=0.5, hold_min_wall_s=1.0, wall_fallback_s=2.0)
     found, _ = fly(georef=wrong)
     errors = [m.s_m - s for m, s in zip(found, [2.5, 6.0, 9.5], strict=True)]
     assert errors == pytest.approx([-0.15] * 3, abs=0.02)

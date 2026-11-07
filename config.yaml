@@ -31,6 +31,7 @@ survey:                        # the line-survey test (docs/line-survey.md)
     off_line_m: 0.5
     height_band_m: 0.15
     hold_timeout_s: 0.5        # simulated time
+    hold_min_wall_s: 1.0       # the timeout also needs this much wall time (a stall of the node is not a missing pose)
     wall_fallback_s: 2.0
     max_pose_gap_s: 0.2
     coverage_gap_factor: 1.5

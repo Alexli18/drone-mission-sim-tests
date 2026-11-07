@@ -124,6 +124,7 @@ class GeorefConfig:
     off_line_m: float
     height_band_m: float
     hold_timeout_s: float        # simulated time
+    hold_min_wall_s: float       # the hold timeout also needs this much wall time
     wall_fallback_s: float
     max_pose_gap_s: float
     coverage_gap_factor: float
