@@ -34,6 +34,8 @@ three times has 13 flight tests x 3 = 39 results; all 15 flight tests exist.
 and all 18 CI jobs passed, including 39 of 39 flight-test results. The weekly line-survey plan (12 tests per run)
 was started by hand 15 times that day: 12 runs had no failure, and the last 5 runs, made after the fixes, passed 60 of
 60 tests. The 3 runs with failures are explained under [Limitations and open issues](#limitations-and-open-issues).
+The first scheduled weekly run, on Monday 9 Nov 2026 (`main` at `b742193`), passed 12 of 12:
+[run 42625034783](https://github.com/Alexli18/drone-mission-sim-tests/actions/runs/42625034783).
 
 > [!NOTE]
 > **Not verified:** anything on hardware (there is no hardware-in-the-loop), real sensors (SIH is simplified and the
